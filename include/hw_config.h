@@ -17,14 +17,14 @@
 // ============================================================
 #ifndef IO_SIMULATION
 
-const int PIN_AI[AI_COUNT] = {4,  5,  6,  7};  // Analog inputs  (4–20 mA) — ADC1 channels
-const int PIN_DI[DI_COUNT] = {17, 18, 14, 15}; // Digital inputs
-const int PIN_DO[DO_COUNT] = {16, 13, 12, 11}; // Digital outputs
-const int PIN_AO[AO_COUNT] = {21, 38, 39, 40}; // Analog outputs (PWM)
+const int PIN_AI[AI_COUNT] = {35,  34,  -1,  -1};  // Analog inputs  (0-10 V engineering scale) — ADC1 channels
+const int PIN_DI[DI_COUNT] = {36, 39, 32, 33}; // Digital inputs
+const int PIN_DO[DO_COUNT] = {23, 19, 18, 5}; // Digital outputs
+const int PIN_AO[AO_COUNT] = {15, -1, -1, -1}; // Analog outputs (PWM)
 
 // PWM settings — one LEDC channel per AO output
 const int PWM_CH[AO_COUNT] = {0, 1, 2, 3};
-const int PWM_FREQ = 5000;
+const int PWM_FREQ = 1;
 const int PWM_RES  = 8;
 
 #endif

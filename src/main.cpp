@@ -15,10 +15,8 @@
 void initTasks();
 
 void setup() {
-  WiFi.mode(WIFI_MODE_APSTA);
+  WiFi.mode(WIFI_MODE_STA);
   Serial.begin(115200);
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
   updateDeviceID();
 
   hal.init();
@@ -44,7 +42,7 @@ void setup() {
   initMQTT();
   initTasks();
 
-#ifndef IO_SIMULATION
+#ifdef IO_SIMULATION
   debugSerialInit();
 #endif
 }

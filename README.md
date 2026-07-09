@@ -143,32 +143,58 @@ Logic programs are JSON objects with a `"blocks"` array. Each block has:
 
 Programs are pushed via MQTT on `topicControl` and persisted to NVS flash automatically.
 
-**Example:** If AI[0] > 75.0, set DO[0] = 1
+**Example:** If AI[0] is greater than 75.0, turn DO[0] on.
 
-```json
+```jsonc
 {
+  // Root message type: tells the firmware this payload is a logic program.
   "type": "logic",
+
+  // Ordered list of blocks that form the program.
   "blocks": [
     {
+      // Block ID used as a reference target from other blocks.
+      "id": 10,
+
+      // Block type: 3 = IO block.
+      "t": 3,
+
+      // IO operation: 0 = read input, 1 = write output.
+      "op": 0,
+
+      // IO target: [0, 0] = AI[0].
+      "io": [0, 0]
+    },
+    {
+      // Block ID used by downstream blocks.
       "id": 0,
+
+      // Block type: 1 = COMPARE block.
       "t": 1,
+
+      // Comparison operator: 1 = greater-than.
       "op": 1,
+
+      // Inputs: [1, 10] = value from block 10, [0, 75.0] = constant 75.0.
       "in": [
         [1, 10],
         [0, 75.0]
       ]
     },
     {
-      "id": 10,
-      "t": 3,
-      "op": 0,
-      "io": [0, 0]
-    },
-    {
+      // Block ID used by the output block below.
       "id": 1,
+
+      // Block type: 3 = IO block.
       "t": 3,
+
+      // IO operation: 1 = write output.
       "op": 1,
+
+      // IO target: [3, 0] = DO[0].
       "io": [3, 0],
+
+      // Input: take the result from block 0.
       "in": [
         [1, 0]
       ]
@@ -177,7 +203,7 @@ Programs are pushed via MQTT on `topicControl` and persisted to NVS flash automa
 }
 ```
 
-> Block 10 reads AI[0] (`"io": [0, 0]`). Block 0 compares it (`op=1` → `>`) against constant 75.0. Block 1 writes the result to DO[0] (`"io": [3, 0]`).
+Block 10 reads AI[0]. Block 0 compares that value against 75.0. Block 1 writes the comparison result to DO[0].
 
 ## MQTT Control Protocol
 
@@ -258,6 +284,10 @@ All hardware constants are in `include/hw_config.h`:
 | `PWM_FREQ` / `PWM_RES` | 5000 Hz / 8-bit | AO PWM settings |
 | `SHUNT_OHMS` | 150 Ω | Current sense resistor for AI/AO |
 | `VREF` | 3.3 V | ADC reference voltage |
+
+### Analog Scaling
+
+AI and AO channels default to a 0-10 V engineering range. The backend can override those mappings per channel through `mapMin` and `mapMax`.
 
 ## License
 

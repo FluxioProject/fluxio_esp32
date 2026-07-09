@@ -16,6 +16,7 @@ void MyWebServer::createAP() {
   WiFi.softAP(SSID_ESP, PASSWORD_ESP);
   IPAddress IP = WiFi.softAPIP();
   Serial.println("AP created! " + IP.toString());
+  apActive = true;
 }
 
 void MyWebServer::connectWiFi() {
@@ -36,11 +37,18 @@ void MyWebServer::connectWiFi() {
   }
 
   if (WiFi.isConnected()) {
+    // se o AP tinha sido ligado antes, desliga agora que temos internet
+    if (apActive) {
+      WiFi.softAPdisconnect(true);
+      apActive = false;
+      Serial.println("AP turn off —  STA.");
+    }
     String ip = WiFi.localIP().toString();
-    Serial.println("IP " + ip);
+    Serial.println("Connected - IP: " + ip);
   } else {
     Serial.println("Failed to connect to Wi-Fi. AP mode activated.");
   }
+
   myDelayMillis(500);
   setupRoutes();
 }

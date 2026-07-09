@@ -27,7 +27,7 @@ bool doOtaHttps(const OtaJob &job) {
   }
 
   WiFiClientSecure client;
-  client.setCACert(GCS_ROOT_CA);
+  // client.setCACert(GCS_ROOT_CA);
 
   HTTPClient https;
   https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);

@@ -198,7 +198,8 @@ void taskTelemetry(void *pvParameters) {
 }
 
 void initMQTT() {
-  wifiClient.setCACert(HIVEMQ_ROOT_CA);
+  // wifiClient.setCACert(HIVEMQ_ROOT_CA);
+  wifiClient.setInsecure();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
 

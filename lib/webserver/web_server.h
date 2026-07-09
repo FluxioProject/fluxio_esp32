@@ -49,7 +49,9 @@ public:
   /** @brief Stops the HTTP server. */
   void close();
 
-private:
+  private:
+  bool apActive = false;
+  
   /** @brief Creates a Wi-Fi Access Point using the credentials from credentials.h. */
   void createAP();
 

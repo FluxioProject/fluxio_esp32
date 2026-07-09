@@ -4,7 +4,8 @@
 #include <hal.h>
 
 
-bool fetchMQTTCredentials() {
+bool fetchMQTTCredentials()
+{
   if (WiFi.status() != WL_CONNECTED)
     return false;
 
@@ -186,7 +187,7 @@ bool fetchAllChannels() {
 void setInitChannels() {
   for (int i = 0; i < AI_COUNT; i++) {
     hal.aiMapMin[i] = 0.0f;
-    hal.aiMapMax[i] = 100.0f;
+    hal.aiMapMax[i] = 10.0f;
     aiLimits[i].min = -999999;
     aiLimits[i].max = 999999;
     aiLimits[i].notifyMobile = false;
@@ -197,7 +198,7 @@ void setInitChannels() {
   }
   for (int i = 0; i < AO_COUNT; i++) {
     hal.aoMapMin[i] = 0.0f;
-    hal.aoMapMax[i] = 100.0f;
+    hal.aoMapMax[i] = 10.0f;
     aoLimits[i].min = -999999;
     aoLimits[i].max = 999999;
     aoLimits[i].notifyMobile = false;
