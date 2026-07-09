@@ -44,7 +44,7 @@ void setup() {
   initMQTT();
   initTasks();
 
-#ifdef IO_SIMULATION
+#ifndef IO_SIMULATION
   debugSerialInit();
 #endif
 }

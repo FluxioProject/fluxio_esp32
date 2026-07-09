@@ -2,15 +2,18 @@
 
 ## Project Overview
 
-ESP32-S3 IoT firmware written in C++ with the Arduino framework via PlatformIO.
-The device reads 4× analog (4–20 mA) and 4× digital inputs, drives 4× analog (PWM) and 4× digital outputs,
-runs a programmable logic engine, communicates over MQTT/TLS with a Firebase backend, and supports OTA updates.
+ESP32 IoT firmware written in C++ with the Arduino framework via PlatformIO.
+The device reads 4× analog input slots (currently 0-10 V) and 4× digital inputs, drives 4× analog (PWM) and 4× digital outputs,
+runs a programmable logic engine, communicates over MQTT and HTTPS with a Firebase backend, and supports OTA updates.
 
 ## Build & Test
 
 ```bash
 # Build
 ~/.platformio/penv/bin/pio run
+
+# Windows build
+& "$HOME\.platformio\penv\Scripts\pio.exe" run
 
 # Build + flash (device must be connected)
 ~/.platformio/penv/bin/pio run --target upload
@@ -52,7 +55,7 @@ lib/
 - **`#pragma once`** used in all headers — never `#ifndef` guards
 - **C-style char arrays** for MQTT/EEPROM buffers; `String` only for Arduino API calls
 - **FreeRTOS tasks** pinned to cores: MQTT + Telemetry + Logic → core 1; OTA + WDT + Alerts → core 0
-- **TLS certificates** (`GCS_ROOT_CA`, `HIVEMQ_ROOT_CA`) are embedded in `credentials.h` as `PROGMEM` strings — see the **TLS Certificates** section below for renewal commands
+- **TLS certificates** (`GCS_ROOT_CA`, `HIVEMQ_ROOT_CA`) are embedded in `credentials.h` as `PROGMEM` strings, but current MQTT/HTTPS clients use `setInsecure()` or have `setCACert(...)` commented out — see the **TLS Certificates** section below before production
 - **Credentials never committed** — always edit `credentials.h` locally, refer to `credentials.example.h`
 - **`IO_SIMULATION`** lets the full firmware compile and run without any hardware
 
@@ -73,13 +76,14 @@ All topics are built in `initMQTT()` / `updateDeviceID()` using the pattern `dev
 
 ## TLS Certificates
 
-Both TLS connections use embedded root CA certificates stored in `credentials.h`.
-When a cert is close to expiry, re-run the corresponding command and replace the block in `credentials.h`.
+Root CA certificates are stored in `credentials.h`, but the current code does not enforce them:
+`mqtt.cpp`, `backend.cpp`, and `alerts.cpp` use `setInsecure()`, and `ota.cpp` has `client.setCACert(GCS_ROOT_CA)` commented out.
+Before production, replace those calls with `setCACert(...)` and keep the certificates current.
 
 | Constant | Used by | CA | Expires | Renewal command |
 |---|---|---|---|---|
-| `HIVEMQ_ROOT_CA` | `mqtt.cpp` — `wifiClient.setCACert()` | Let's Encrypt R13 (ISRG Root X1) | **2027-03-12** | `openssl s_client -connect <broker>:8883 -showcerts` |
-| `GCS_ROOT_CA` | `ota.cpp` — `client.setCACert()` | Google Trust Services WR2 | **2029-02-20** | `openssl s_client -connect storage.googleapis.com:443 -showcerts` |
+| `HIVEMQ_ROOT_CA` | `mqtt.cpp` — use with `wifiClient.setCACert()` before production | Let's Encrypt R13 (ISRG Root X1) | **2027-03-12** | `openssl s_client -connect <broker>:8883 -showcerts` |
+| `GCS_ROOT_CA` | `ota.cpp` — use with `client.setCACert()` before production | Google Trust Services WR2 | **2029-02-20** | `openssl s_client -connect storage.googleapis.com:443 -showcerts` |
 
 ### How to renew
 

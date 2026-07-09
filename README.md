@@ -1,16 +1,16 @@
 # Fluxio ESP32 Firmware
 
-ESP32-S3 firmware for a multi-channel industrial I/O device with MQTT connectivity, a Firebase-backed HTTP API, OTA updates, alert delivery, and a local web configuration portal.
+ESP32 firmware for a multi-channel industrial I/O device with MQTT connectivity, a Firebase-backed HTTP API, OTA updates, alert delivery, and a local web configuration portal.
 
 ## Features
 
-- 4 analog inputs for 4-20 mA signals mapped to configurable engineering units
-- 4 analog outputs driven by PWM and external 4-20 mA conditioning circuitry
+- 4 analog input slots, currently configured for 0-10 V signals through a resistor divider
+- 4 analog output slots driven by PWM and external 4-20 mA conditioning circuitry
 - 4 digital inputs with edge-triggered alerts
 - 4 digital outputs controlled through MQTT
 - JSON-based logic engine with math, compare, timer, and I/O blocks
-- MQTT over TLS using an embedded root CA certificate
-- HTTPS OTA updates with TLS verification and SHA-256 integrity checks
+- MQTT/HTTPS transport support with certificate placeholders in `credentials.h`
+- OTA updates with SHA-256 integrity checks
 - Local web portal for Wi-Fi configuration and firmware upload
 - Alert queue with retry persistence in non-volatile storage
 - FreeRTOS task split for MQTT, telemetry, OTA, alerts, watchdog, and logic execution
@@ -19,20 +19,20 @@ ESP32-S3 firmware for a multi-channel industrial I/O device with MQTT connectivi
 
 | Component | Detail |
 |---|---|
-| MCU | ESP32-S3-DevKitM-1 |
-| AI 0-3 | 4-20 mA inputs on pins 4, 5, 6, 7 using ADC1, 12-bit resolution, and 150 ohm shunts |
-| AO 0-3 | PWM outputs on pins 21, 38, 39, 40 using LEDC at 5 kHz and 8-bit resolution |
-| DI 0-3 | Digital inputs on pins 17, 18, 14, 15 with `INPUT_PULLDOWN` |
-| DO 0-3 | Digital outputs on pins 16, 13, 12, 11 |
+| MCU | ESP32 Dev Module (`board = esp32dev` in `platformio.ini`) |
+| AI 0-3 | 0-10 V analog inputs on pins 35, 34, disabled, disabled using ADC1 and a 68K/33K divider |
+| AO 0-3 | PWM outputs on pins 15, disabled, disabled, disabled using LEDC at 5 kHz and 8-bit resolution |
+| DI 0-3 | Digital inputs on pins 36, 39, 32, 33 with `INPUT_PULLDOWN` |
+| DO 0-3 | Digital outputs on pins 23, 19, 18, 5 |
 
-The ESP32-S3 does not include DAC outputs. Analog outputs use PWM, so the hardware must include the required filtering and current-driver stage for a real 4-20 mA output.
+This firmware drives analog outputs with PWM, so the hardware must include the required filtering and current-driver stage for a real 4-20 mA output.
 
 Pin assignments and hardware constants are defined in `include/hw_config.h`. Set a channel pin to `-1` to disable it.
 
 ## Requirements
 
 - PlatformIO CLI or the VS Code PlatformIO extension
-- ESP32-S3-DevKitM-1 or compatible hardware
+- ESP32 Dev Module or compatible hardware matching `include/hw_config.h`
 - A Fluxio backend endpoint
 - MQTT broker credentials returned by the backend
 
@@ -50,8 +50,10 @@ Edit `include/credentials.h` with:
 - Default Wi-Fi station credentials
 - Fluxio backend URL
 - Shared backend API token
-- MQTT root CA certificate
-- OTA download root CA certificate
+- MQTT root CA certificate placeholder
+- OTA download root CA certificate placeholder
+
+The current firmware uses `setInsecure()` for MQTT, backend HTTPS calls, and alert HTTPS calls. OTA also has `client.setCACert(GCS_ROOT_CA)` commented out. Fill the certificates and switch those clients back to `setCACert(...)` before treating TLS peer verification as enabled.
 
 `include/credentials.h` is ignored by Git and must not be committed.
 
@@ -61,6 +63,14 @@ Edit `include/credentials.h` with:
 pio run
 pio run --target upload
 pio device monitor
+```
+
+On Windows, if `pio` is not on PATH, use:
+
+```powershell
+& "$HOME\.platformio\penv\Scripts\pio.exe" run
+& "$HOME\.platformio\penv\Scripts\pio.exe" run --target upload
+& "$HOME\.platformio\penv\Scripts\pio.exe" device monitor
 ```
 
 The serial monitor runs at `115200` baud.
@@ -152,7 +162,8 @@ The console is only available when `IO_SIMULATION` is not defined.
 - Keep `include/credentials.h` out of source control.
 - Rotate the shared backend API token if it is exposed.
 - Keep TLS root CA certificates current for the MQTT broker and OTA download host.
-- OTA updates are accepted only when both TLS verification and SHA-256 validation succeed.
+- TLS peer verification is not currently enforced while clients use `setInsecure()`.
+- OTA updates are accepted only when SHA-256 validation succeeds; TLS verification requires re-enabling `setCACert(...)`.
 
 ## License
 
