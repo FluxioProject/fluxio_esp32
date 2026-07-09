@@ -17,6 +17,7 @@ typedef struct {
   char name[32];         ///< Human-readable channel name.
   bool outOfRange;       ///< True while the channel value is outside [min, max].
   uint32_t lastNotifyMs; ///< millis() timestamp of the last alert sent (rate-limits to 5 min).
+  uint32_t firstOutOfRangeMs; ///< millis() timestamp when value first left range, for debounce.
 } ChannelLimit;
 
 /**
@@ -44,6 +45,8 @@ extern bool diNotifyEmail[DI_COUNT];   ///< Enable e-mail notification for DI ed
 extern bool diNotifySms[DI_COUNT];     ///< Enable SMS notification for DI edge events.
 extern bool diLastState[DI_COUNT];     ///< Last sampled state, used for edge detection.
 extern int  diTrigger[DI_COUNT];       ///< Edge to alert on: 0 = falling, 1 = rising.
+extern uint32_t diLastNotifyMs[DI_COUNT]; ///< Last alert timestamp, for per-channel cooldown.
+extern uint32_t diPendingSinceMs[DI_COUNT]; ///< When the current candidate state started, for debounce.
 
 // ----- DO channel metadata -----
 extern char doName[DO_COUNT][32];      ///< Human-readable name for each digital output.
@@ -52,28 +55,39 @@ extern bool doNotifyEmail[DO_COUNT];   ///< Enable e-mail notification for DO ed
 extern bool doNotifySms[DO_COUNT];     ///< Enable SMS notification for DO edge events.
 extern bool doLastState[DO_COUNT];     ///< Last sampled state, used for edge detection.
 extern int  doTrigger[DO_COUNT];       ///< Edge to alert on: 0 = falling, 1 = rising.
+extern uint32_t doLastNotifyMs[DO_COUNT]; ///< Last alert timestamp, for per-channel cooldown.
+extern uint32_t doPendingSinceMs[DO_COUNT]; ///< When the current candidate state started, for debounce.
 
 /**
  * @brief Checks all digital inputs for edge events matching diTrigger and
  *        enqueues an AlertJob for channels that have notifications enabled.
+ *
+ * Applies a debounce window (state must hold stable) and a per-channel
+ * cooldown to avoid spamming alerts on electrically noisy/bouncing inputs.
  */
 void checkDiAlerts();
 
 /**
  * @brief Checks all digital outputs for edge events matching doTrigger and
  *        enqueues an AlertJob for channels that have notifications enabled.
+ *
+ * Applies the same debounce + cooldown protection as checkDiAlerts().
  */
 void checkDoAlerts();
 
 /**
  * @brief Checks all analog inputs against their configured limits.
- *        Enqueues an AlertJob at most once every 5 minutes per channel.
+ *
+ * Uses hysteresis around min/max plus a debounce window before considering
+ * the channel truly out of range, then rate-limits to one alert every 5
+ * minutes while the condition persists — even if the value flickers in and
+ * out of range near the threshold.
  */
 void checkAiLimits();
 
 /**
  * @brief Checks all analog outputs against their configured limits.
- *        Enqueues an AlertJob at most once every 5 minutes per channel.
+ *        Same hysteresis, debounce, and 5-minute rate limit as checkAiLimits().
  */
 void checkAoLimits();
 
