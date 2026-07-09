@@ -27,6 +27,8 @@ void setup() {
   delay(3000);
 
   webServer.connectWiFi();
+  
+  delay(500);
 
   if (!fetchMQTTCredentials() && WiFi.isConnected()) {
     Serial.println("Failed to fetch MQTT credentials, rebooting...");

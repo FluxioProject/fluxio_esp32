@@ -6,52 +6,99 @@
 #include <logic.h>
 #include <ota.h>
 
-
 WiFiClientSecure wifiClient;
 PubSubClient mqtt(wifiClient);
 
+static const uint16_t MQTT_BUFFER_SIZE = 1024;
+static uint32_t mqttReconnectAttempts = 0;
+static uint32_t lastConnectAttemptMs = 0;
+
+const char *mqttStateStr(int state) {
+  switch (state) {
+    case -4: return "MQTT_CONNECTION_TIMEOUT";
+    case -3: return "MQTT_CONNECTION_LOST";
+    case -2: return "MQTT_CONNECT_FAILED (TCP/TLS failed)";
+    case -1: return "MQTT_DISCONNECTED";
+    case 0:  return "MQTT_CONNECTED";
+    case 1:  return "MQTT_CONNECT_BAD_PROTOCOL";
+    case 2:  return "MQTT_CONNECT_BAD_CLIENT_ID";
+    case 3:  return "MQTT_CONNECT_UNAVAILABLE (broker refused)";
+    case 4:  return "MQTT_CONNECT_BAD_CREDENTIALS";
+    case 5:  return "MQTT_CONNECT_UNAUTHORIZED";
+    default: return "UNKNOWN";
+  }
+}
+
+// Builds the {"online":true,"ip":"..."} payload used for status publishes
+static void buildOnlineStatusPayload(char *buf, size_t bufSize) {
+  String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "";
+  snprintf(buf, bufSize, "{\"online\":true,\"ip\":\"%s\"}", ip.c_str());
+}
+
 void connectMQTT() {
-  if (WiFi.status() != WL_CONNECTED)
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[MQTT] Skipped connect: Wi-Fi not connected");
     return;
+  }
   if (mqtt.connected())
     return;
 
-  Serial.print("MQTT...");
+  uint32_t now = millis();
+  Serial.printf("[MQTT] Connecting to %s:%d (attempt #%lu, RSSI=%d dBm, freeHeap=%u)...\n",
+                MQTT_HOST, MQTT_PORT, ++mqttReconnectAttempts, WiFi.RSSI(),
+                ESP.getFreeHeap());
 
   char clientId[64];
   snprintf(clientId, sizeof(clientId), "%s", DEVICE_ID.c_str());
 
-  if (mqtt.connect(clientId, MQTT_USER, MQTT_PASS)) {
-    Serial.println(" connected");
+  // Last Will: if the connection drops uncleanly, the broker publishes this
+  // retained "offline" message on our behalf.
+  const char *willMessage = "{\"online\":false}";
+
+  bool ok = mqtt.connect(clientId, MQTT_USER, MQTT_PASS,
+                        topicStatus, 1, true, willMessage);
+  uint32_t elapsed = millis() - now;
+
+  if (ok) {
+    Serial.printf("[MQTT] Connected in %lu ms\n", elapsed);
+    mqttReconnectAttempts = 0;
+
+    char statusPayload[96];
+    buildOnlineStatusPayload(statusPayload, sizeof(statusPayload));
+
+    bool sent = mqtt.publish(topicStatus, statusPayload, true); // retained
+    Serial.printf("[MQTT] Status published %s: %s\n",
+                  sent ? "OK" : "FAILED", statusPayload);
   } else {
-    Serial.print(" failed rc=");
-    Serial.println(mqtt.state());
+    Serial.printf("[MQTT] Connect failed in %lu ms, state=%d (%s)\n", elapsed,
+                  mqtt.state(), mqttStateStr(mqtt.state()));
   }
+
+  lastConnectAttemptMs = now;
 }
 
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
+  Serial.printf("[MQTT] RX topic=%s len=%u\n", topic, length);
+
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, payload, length);
 
   if (err) {
-    Serial.println("Invalid MQTT JSON");
+    Serial.printf("[MQTT] Invalid JSON on topic %s: %s\n", topic, err.c_str());
     return;
   }
 
   if (doc["manual"].is<bool>()) {
     manualMode = doc["manual"];
-    Serial.printf("Manual mode: %s\n", manualMode ? "ON" : "OFF");
+    Serial.printf("[MQTT] Manual mode: %s\n", manualMode ? "ON" : "OFF");
   }
 
-  // ===== TELEMETRY =====
   if (doc["telemetry"].is<bool>()) {
     telemetryEnabled = doc["telemetry"];
     lastTelemetryCmd = millis();
-    Serial.print("Telemetry ");
-    Serial.println(telemetryEnabled ? "ON" : "OFF");
+    Serial.printf("[MQTT] Telemetry: %s\n", telemetryEnabled ? "ON" : "OFF");
   }
 
-  // ===== DIGITAL OUTPUT =====
   if (doc["do"].is<JsonObject>()) {
     int index = doc["do"]["index"] | -1;
     int value = doc["do"]["value"] | 0;
@@ -59,12 +106,12 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     if (index >= 0 && index < DO_COUNT) {
       hal.doo[index] = value ? 1 : 0;
       hal.updateIO();
-
-      Serial.printf("DO[%d] = %d\n", index, hal.doo[index]);
+      Serial.printf("[MQTT] DO[%d] = %d\n", index, hal.doo[index]);
+    } else {
+      Serial.printf("[MQTT] DO command with invalid index: %d\n", index);
     }
   }
 
-  // ===== ANALOG OUTPUT =====
   if (doc["ao"].is<JsonObject>()) {
     int index = doc["ao"]["index"] | -1;
     float value = doc["ao"]["value"] | 0.0;
@@ -72,24 +119,25 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     if (index >= 0 && index < AO_COUNT) {
       hal.ao[index] = value;
       hal.updateIO();
-
-      Serial.printf("AO[%d] = %.2f\n", index, hal.ao[index]);
+      Serial.printf("[MQTT] AO[%d] = %.2f\n", index, hal.ao[index]);
+    } else {
+      Serial.printf("[MQTT] AO command with invalid index: %d\n", index);
     }
   }
 
   if (doc["type"] == "logic") {
-    Serial.println("New logic program received via MQTT");
+    Serial.println("[MQTT] New logic program received");
     logicJsonCache = String((const char *)payload, length);
-    Serial.println(logicJsonCache);
 
     if (loadLogicFromJson(doc)) {
       saveLogicToFlash(logicJsonCache);
-      Serial.println("Logic program updated and persisted");
+      Serial.println("[MQTT] Logic program updated and persisted");
+    } else {
+      Serial.println("[MQTT] Failed to load logic program from JSON");
     }
     return;
   }
 
-  // ===== OTA =====
   const char *type = doc["type"] | "";
   if (strcmp(type, "ota") == 0) {
     const char *url = doc["url"] | "";
@@ -98,7 +146,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     const char *version = doc["version"] | "";
 
     if (!url[0] || strlen(sha) != 64 || size == 0) {
-      Serial.println("Invalid OTA payload (url/sha/size)");
+      Serial.println("[MQTT] Invalid OTA payload (missing url/sha/size)");
       return;
     }
 
@@ -110,33 +158,36 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
     if (otaQueue) {
       if (xQueueSend(otaQueue, &job, 0) != pdTRUE) {
-        Serial.println("OTA queue full, ignoring OTA");
+        Serial.println("[MQTT] OTA queue full, job dropped");
       } else {
-        Serial.printf("OTA job queued version=%s size=%u\n", job.version,
+        Serial.printf("[MQTT] OTA job queued version=%s size=%u\n", job.version,
                       job.size);
       }
     }
+    return;
   }
+
   if (strcmp(type, "logic_get") == 0) {
     if (logicJsonCache.length() == 0) {
-      Serial.println("No saved logic to send");
+      Serial.println("[MQTT] logic_get requested but no cached logic to send");
       return;
     }
-
-    mqtt.publish(topicLogic, logicJsonCache.c_str(),
-                 true // retain
-    );
-
-    Serial.println("Logic sent via MQTT");
-    return;
+    bool sent = mqtt.publish(topicLogic, logicJsonCache.c_str(), true);
+    Serial.printf("[MQTT] logic_get response %s (%u bytes)\n",
+                  sent ? "sent" : "FAILED", logicJsonCache.length());
   }
 }
 
 void taskMQTT(void *pvParameters) {
   static bool subscribed = false;
+  static uint32_t lastLoopLog = 0;
 
   for (;;) {
     if (!mqtt.connected()) {
+      if (subscribed) {
+        Serial.printf("[MQTT] Connection lost, state=%d (%s)\n", mqtt.state(),
+                      mqttStateStr(mqtt.state()));
+      }
       connectMQTT();
       subscribed = false;
       vTaskDelay(pdMS_TO_TICKS(1000));
@@ -149,13 +200,22 @@ void taskMQTT(void *pvParameters) {
 
       if (ok1 && ok2) {
         subscribed = true;
-        Serial.println("Subscribed to control + ota topics");
+        Serial.printf("[MQTT] Subscribed to %s and %s\n", topicControl, topicOta);
       } else {
-        Serial.println("Subscribe failed");
+        Serial.printf("[MQTT] Subscribe failed (control=%d, ota=%d), retrying\n",
+                      ok1, ok2);
       }
     }
 
     mqtt.loop();
+
+    uint32_t now = millis();
+    if (now - lastLoopLog >= 30000) {
+      lastLoopLog = now;
+      Serial.printf("[MQTT] Alive, connected=%d, RSSI=%d dBm, freeHeap=%u\n",
+                    mqtt.connected(), WiFi.RSSI(), ESP.getFreeHeap());
+    }
+
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
@@ -174,10 +234,20 @@ void sendTelemetry() {
   for (int i = 0; i < DO_COUNT; i++) jdo.add(hal.doo[i]);
 
   char payload[256];
-  serializeJson(doc, payload);
+  size_t len = serializeJson(doc, payload, sizeof(payload));
 
-  mqtt.publish(topicTelemetry, payload);
-  Serial.println(payload);
+  if (len == 0 || len >= sizeof(payload)) {
+    Serial.printf("[Telemetry] Payload too large or serialization failed (len=%u)\n", len);
+    return;
+  }
+
+  bool sent = mqtt.publish(topicTelemetry, payload);
+  if (!sent) {
+    Serial.printf("[Telemetry] Publish FAILED (state=%d %s), payload=%s\n",
+                  mqtt.state(), mqttStateStr(mqtt.state()), payload);
+  } else {
+    Serial.printf("[Telemetry] Sent (%u bytes): %s\n", len, payload);
+  }
 }
 
 void taskTelemetry(void *pvParameters) {
@@ -190,6 +260,7 @@ void taskTelemetry(void *pvParameters) {
     if (millis() - lastTelemetryCmd < 10000) {
       sendTelemetry();
     } else {
+      Serial.println("[Telemetry] Auto-disabled: no enable command in last 10s");
       telemetryEnabled = false;
     }
 
@@ -198,16 +269,23 @@ void taskTelemetry(void *pvParameters) {
 }
 
 void initMQTT() {
-  // wifiClient.setCACert(HIVEMQ_ROOT_CA);
   wifiClient.setInsecure();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
+  mqtt.setBufferSize(MQTT_BUFFER_SIZE);
+  mqtt.setKeepAlive(30);
+  mqtt.setSocketTimeout(5);
 
   snprintf(topicControl, sizeof(topicControl), "device/%s/control",
            DEVICE_ID.c_str());
-
   snprintf(topicOta, sizeof(topicOta), "device/%s/ota", DEVICE_ID.c_str());
-
   snprintf(topicLogic, sizeof(topicLogic), "device/%s/logic",
            DEVICE_ID.c_str());
+  snprintf(topicStatus, sizeof(topicStatus), "device/%s/status",
+           DEVICE_ID.c_str());
+
+  Serial.printf("[MQTT] Init: host=%s port=%d bufferSize=%u keepAlive=30s\n",
+                MQTT_HOST, MQTT_PORT, MQTT_BUFFER_SIZE);
+  Serial.printf("[MQTT] Topics: control=%s ota=%s logic=%s status=%s\n",
+                topicControl, topicOta, topicLogic, topicStatus);
 }

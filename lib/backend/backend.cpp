@@ -3,45 +3,73 @@
 #include <credentials.h>
 #include <hal.h>
 
-
 bool fetchMQTTCredentials()
 {
   if (WiFi.status() != WL_CONNECTED)
     return false;
 
-  HTTPClient http;
+  // Force reliable public DNS servers instead of relying on whatever the
+  // router handed out via DHCP, since router/ISP DNS instability was
+  // causing intermittent hostByName() failures.
+  IPAddress dns1(8, 8, 8, 8);
+  IPAddress dns2(1, 1, 1, 1);
+  WiFi.config(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), dns1, dns2);
 
+  const int maxAttempts = 4;
   String url = String(BACKEND_URL) + "/mqtt?deviceId=" + DEVICE_ID;
 
-  http.begin(url);
-  http.addHeader("x-api-key", BACKEND_TOKEN);
-  int httpCode = http.GET();
+  for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+    Serial.printf("[Backend] Fetch attempt %d/%d\n", attempt, maxAttempts);
 
-  if (httpCode != 200) {
-    Serial.println("HTTP error: " + String(httpCode));
-    Serial.println(http.getString());
+    HTTPClient http;
+    http.begin(url);
+    http.addHeader("x-api-key", BACKEND_TOKEN);
+    int httpCode = http.GET();
+
+    if (httpCode != 200) {
+      Serial.printf("[Backend] HTTP error: %d\n", httpCode);
+      if (httpCode > 0) {
+        Serial.println(http.getString());
+      }
+      http.end();
+
+      if (attempt < maxAttempts) {
+        uint32_t backoffMs = attempt * 1000;
+        Serial.printf("[Backend] Retrying in %lu ms\n", backoffMs);
+        delay(backoffMs);
+        continue;
+      }
+      return false;
+    }
+
+    String payload = http.getString();
     http.end();
-    return false;
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload);
+
+    if (err) {
+      Serial.printf("[Backend] JSON parse error: %s\n", err.c_str());
+
+      if (attempt < maxAttempts) {
+        uint32_t backoffMs = attempt * 1000;
+        Serial.printf("[Backend] Retrying in %lu ms\n", backoffMs);
+        delay(backoffMs);
+        continue;
+      }
+      return false;
+    }
+
+    strncpy(MQTT_HOST, doc["mqtt"]["host"] | "", sizeof(MQTT_HOST) - 1);
+    MQTT_PORT = doc["mqtt"]["port"] | 0;
+    strncpy(MQTT_USER, doc["mqtt"]["user"] | "", sizeof(MQTT_USER) - 1);
+    strncpy(MQTT_PASS, doc["mqtt"]["pass"] | "", sizeof(MQTT_PASS) - 1);
+
+    Serial.println("[Backend] MQTT credentials OK");
+    return true;
   }
 
-  String payload = http.getString();
-  http.end();
-
-  JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, payload);
-
-  if (err) {
-    Serial.println("JSON parse error");
-    return false;
-  }
-
-  strncpy(MQTT_HOST, doc["mqtt"]["host"] | "", sizeof(MQTT_HOST) - 1);
-  MQTT_PORT = doc["mqtt"]["port"] | 0;
-  strncpy(MQTT_USER, doc["mqtt"]["user"] | "", sizeof(MQTT_USER) - 1);
-  strncpy(MQTT_PASS, doc["mqtt"]["pass"] | "", sizeof(MQTT_PASS) - 1);
-
-  Serial.println("MQTT credentials OK");
-  return true;
+  return false;
 }
 
 bool fetchAllChannels() {

@@ -7,9 +7,7 @@
 MyWebServer webServer;
 
 void MyWebServer::myDelayMillis(uint16_t delay) {
-  uint32_t startTime = millis();
-  while ((millis() - startTime) < delay)
-    ;
+  vTaskDelay(pdMS_TO_TICKS(delay));
 }
 
 void MyWebServer::createAP() {
@@ -26,6 +24,7 @@ void MyWebServer::connectWiFi() {
 
   uint8_t wifiRetries = 0;
   while (WiFi.status() != WL_CONNECTED) {
+    esp_task_wdt_reset();
     wifiRetries++;
     if (wifiRetries >= TIMEOUT_WIFI) {
       createAP();
@@ -133,14 +132,18 @@ void MyWebServer::handleFirmwareUpload() {
 }
 
 void wifiandwdtTask(void *pvParameters) {
-  esp_task_wdt_add(NULL); // subscribe this task to the watchdog timer
+  esp_task_wdt_add(NULL);
   while (true) {
     esp_task_wdt_reset();
 
     reconnectWiFi++;
     if (reconnectWiFi >= 15) {
-      if (WiFi.status() != WL_CONNECTED)
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.printf("[WiFi] Disconnected, reconnecting... (last RSSI unknown)\n");
         webServer.connectWiFi();
+      } else {
+        Serial.printf("[WiFi] OK, RSSI=%d dBm\n", WiFi.RSSI());
+      }
       reconnectWiFi = 0;
     }
     vTaskDelay(pdMS_TO_TICKS(1000));

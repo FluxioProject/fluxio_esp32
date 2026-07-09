@@ -11,6 +11,12 @@ void HAL::init()
     for (int i = 0; i < DO_COUNT; i++)
         if (PIN_DO[i] >= 0) pinMode(PIN_DO[i], OUTPUT);
 
+    for (int i = 0; i < AI_COUNT; i++) {
+        if (PIN_AI[i] < 0) continue;
+        // Explicit attenuation for full 0-3.3V ADC range
+        analogSetPinAttenuation(PIN_AI[i], ADC_11db);
+    }
+
     for (int i = 0; i < AO_COUNT; i++) {
         if (PIN_AO[i] < 0) continue;
         ledcSetup(PWM_CH[i], PWM_FREQ, PWM_RES);
@@ -27,6 +33,15 @@ float HAL::mapf(float x, float in_min, float in_max,
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
+float HAL::readAdcAveraged(int pin)
+{
+    uint32_t sum = 0;
+    for (int s = 0; s < AI_OVERSAMPLE; s++) {
+        sum += analogRead(pin);
+    }
+    return (float)sum / AI_OVERSAMPLE;
+}
+
 void HAL::updateIO()
 {
 #ifdef IO_SIMULATION
@@ -37,17 +52,21 @@ void HAL::updateIO()
         di[i] = random(0, 2);
 #else
     // =====================================================
-    // ANALOG INPUT (AI) — 4–20 mA → Engineering
+    // ANALOG INPUT (AI) — 0-10V via resistive divider → Engineering
     // =====================================================
     for (int i = 0; i < AI_COUNT; i++) {
         if (PIN_AI[i] < 0) continue;
 
-        int raw = analogRead(PIN_AI[i]);
+        // Oversampled read filters ESP32 ADC noise, especially on
+        // floating/unconnected inputs
+        float raw = readAdcAveraged(PIN_AI[i]);
 
         float vpin = (raw * VREF) / ADC_MAX;
-        float imA  = (vpin * 1000.0f) / SHUNT_OHMS;
 
-        float eng = mapf(imA, 4.0f, 20.0f, aiMapMin[i], aiMapMax[i]);
+        // Undo the 68K/33K voltage divider to recover the real sensor voltage
+        float vsensor = vpin / AI_DIVIDER_RATIO;
+
+        float eng = mapf(vsensor, 0.0f, AI_INPUT_MAX_VOLTS, aiMapMin[i], aiMapMax[i]);
 
         // Safety clamp
         if (eng < aiMapMin[i]) eng = aiMapMin[i];
@@ -69,18 +88,16 @@ void HAL::updateIO()
         if (PIN_DO[i] >= 0) digitalWrite(PIN_DO[i], doo[i] ? HIGH : LOW);
 
     // =====================================================
-    // ANALOG OUTPUT (AO) — Engineering → 4–20 mA
+    // ANALOG OUTPUT (AO) — Engineering → 4–20 mA (unchanged, still current loop)
     // =====================================================
     for (int i = 0; i < AO_COUNT; i++) {
         if (PIN_AO[i] < 0) continue;
 
         float eng = ao[i];
 
-        // Clamp to configured range
         if (eng < aoMapMin[i]) eng = aoMapMin[i];
         if (eng > aoMapMax[i]) eng = aoMapMax[i];
 
-        // Engineering → current → voltage → PWM
         float imA  = mapf(eng, aoMapMin[i], aoMapMax[i], 4.0f, 20.0f);
         float vout = (imA / 1000.0f) * SHUNT_OHMS;
 
@@ -94,4 +111,3 @@ void HAL::updateIO()
     }
 #endif
 }
-

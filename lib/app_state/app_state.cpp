@@ -21,6 +21,7 @@ char topicControl[64];
 char topicTelemetry[64];
 char topicOta[128];
 char topicLogic[128];
+char topicStatus[64];
 String logicJsonCache;
 bool manualMode = false;
 

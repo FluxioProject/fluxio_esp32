@@ -14,8 +14,8 @@ class HAL
 {
 public:
     // ----- IO values — read/written by logic, mqtt, alerts, serial_test -----
-    float ai[AI_COUNT]  = {0}; ///< Analog inputs in engineering units (mapped from 4–20 mA).
-    float ao[AO_COUNT]  = {0}; ///< Analog outputs in engineering units (mapped to 4–20 mA).
+    float ai[AI_COUNT]  = {0}; ///< Analog inputs in engineering units (mapped from 0-10V).
+    float ao[AO_COUNT]  = {0}; ///< Analog outputs in engineering units (mapped to 4-20 mA).
     int   di[DI_COUNT]  = {0}; ///< Digital inputs (0 or 1).
     int   doo[DO_COUNT] = {0}; ///< Digital outputs (0 or 1).
 
@@ -39,7 +39,7 @@ public:
      * @brief Reads all physical inputs into the IO arrays and writes all
      *        output arrays to the corresponding hardware peripherals.
      *
-     * AI: ADC raw → mA → engineering units via aiMapMin/aiMapMax.
+     * AI: ADC raw (averaged) → voltage → undo divider → 0-10V → engineering units.
      * AO: engineering units → mA → voltage → PWM duty cycle.
      * DI: digitalRead(); DO: digitalWrite().
      * In simulation mode, AI and DI are filled with random values.
@@ -53,6 +53,12 @@ private:
      */
     static float mapf(float x, float in_min, float in_max,
                       float out_min, float out_max);
+
+    /**
+     * @brief Reads an ADC pin multiple times and returns the average raw value.
+     *        Reduces noise from floating/unstable analog inputs.
+     */
+    static float readAdcAveraged(int pin);
 };
 
 /** Global HAL instance — include hal.h and use `hal.ai[i]`, `hal.doo[i]`, etc. */
