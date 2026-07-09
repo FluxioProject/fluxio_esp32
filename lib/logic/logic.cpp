@@ -113,6 +113,29 @@ bool loadLogicFromJson(JsonDocument &doc) {
     }
   }
 
+  // -----------------------------------------------------------------
+  // Validate cross-references BEFORE accepting the program.
+  // A block that references a fromBlockId which was never defined
+  // (or was skipped above for being out of range) would otherwise
+  // fail silently on every executeLogic() scan, forever, at 20 Hz.
+  // Reject the whole program instead of loading a broken one.
+  // -----------------------------------------------------------------
+  for (int i = 0; i < logicBlockCount; i++) {
+    LogicBlock &lb = logicBlocks[i];
+    for (int j = 0; j < lb.inputCount; j++) {
+      BlockInput &in = lb.inputs[j];
+      if (in.kind != INPUT_CONSTANT && blockIdToIndex[in.fromBlockId] < 0) {
+        Serial.printf(
+            "Invalid logic program: block id=%d input[%d] references "
+            "missing block id=%d — program rejected\n",
+            lb.id, j, in.fromBlockId);
+        logicBlockCount = 0;
+        logicLoaded = false;
+        return false;
+      }
+    }
+  }
+
   logicLoaded = true;
   Serial.printf("Total blocks loaded: %d\n", logicBlockCount);
   Serial.println("==================");
@@ -126,8 +149,17 @@ float getInputValue(const BlockInput &in) {
   int idx = blockIdToIndex[in.fromBlockId];
 
   if (idx < 0 || idx >= logicBlockCount) {
-    Serial.printf("ERROR: invalid source block id=%d idx=%d\n", in.fromBlockId,
-                  idx);
+    // Rate-limited safety net: loadLogicFromJson() now rejects programs
+    // with dangling references up front, so this path should be
+    // unreachable in normal operation. Kept as a guard against any
+    // future/edge case so a bad reference can't flood the serial log.
+    static uint32_t lastWarnMs = 0;
+    uint32_t now = millis();
+    if (now - lastWarnMs > 5000) {
+      Serial.printf("ERROR: invalid source block id=%d idx=%d\n",
+                    in.fromBlockId, idx);
+      lastWarnMs = now;
+    }
     return 0;
   }
   return logicBlocks[idx].lastValue;
