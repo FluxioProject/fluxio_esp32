@@ -24,6 +24,8 @@ char topicLogic[128];
 char topicStatus[64];
 String logicJsonCache;
 bool manualMode = false;
+bool apActive = false;
+unsigned long apStartTime = 0;
 
 void updateDeviceID() {
   uint64_t mac = ESP.getEfuseMac();

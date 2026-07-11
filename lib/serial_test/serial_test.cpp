@@ -89,7 +89,7 @@ static void printHelp() {
 
 void debugSerialInit() {
   printHelp();
-  runAllTests();
+  // runAllTests();
 }
 
 static unsigned long s_lastPrint = 0;

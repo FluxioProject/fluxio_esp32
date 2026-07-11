@@ -27,7 +27,8 @@ extern char topicOta[128];            ///< MQTT topic for receiving OTA update c
 extern char topicLogic[128];          ///< MQTT topic for receiving / sending logic programs.
 extern char topicStatus[64];            
 extern String logicJsonCache;         ///< Last-loaded logic program JSON, used for re-publishing.
-
+extern bool apActive;
+extern unsigned long apStartTime;
 extern bool manualMode; ///< When true, the logic engine is paused and outputs are set manually.
 
 /**

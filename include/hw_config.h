@@ -19,7 +19,7 @@
 
 const int PIN_AI[AI_COUNT] = {35,  34,  -1,  -1};  // Analog inputs  (0-10 V engineering scale) — ADC1 channels
 const int PIN_DI[DI_COUNT] = {36, 39, 32, 33}; // Digital inputs
-const int PIN_DO[DO_COUNT] = {23, 19, 18, 5}; // Digital outputs
+const int PIN_DO[DO_COUNT] = {4, 16, 17, 18}; // Digital outputs
 const int PIN_AO[AO_COUNT] = {15, -1, -1, -1}; // Analog outputs (PWM)
 
 // PWM settings — one LEDC channel per AO output

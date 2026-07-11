@@ -51,7 +51,7 @@ void setup() {
 
 void loop() {
 #ifndef IO_SIMULATION
-  debugSerialLoop();
+  // debugSerialLoop();
 #endif
 
   // 10 min to turn off web server
