@@ -6,6 +6,7 @@
 #include <app_state.h>
 #include <credentials.h>
 #include <hal.h>
+#include <backend.h>
 
 // ----- Tuning constants -----
 // Minimum time a value must stay out of range before an alert is considered
@@ -32,7 +33,7 @@ bool diNotifyMobile[DI_COUNT];
 bool diNotifyEmail[DI_COUNT];
 bool diNotifySms[DI_COUNT];
 bool diLastState[DI_COUNT];
-int  diTrigger[DI_COUNT];
+int diTrigger[DI_COUNT];
 uint32_t diLastNotifyMs[DI_COUNT];
 uint32_t diPendingSinceMs[DI_COUNT];
 
@@ -41,11 +42,12 @@ bool doNotifyMobile[DO_COUNT];
 bool doNotifyEmail[DO_COUNT];
 bool doNotifySms[DO_COUNT];
 bool doLastState[DO_COUNT];
-int  doTrigger[DO_COUNT];
+int doTrigger[DO_COUNT];
 uint32_t doLastNotifyMs[DO_COUNT];
 uint32_t doPendingSinceMs[DO_COUNT];
 
-static inline void enqueueAlert(float value, const char *name) {
+static inline void enqueueAlert(float value, const char *name)
+{
   if (!alertQueue)
     return;
 
@@ -56,38 +58,53 @@ static inline void enqueueAlert(float value, const char *name) {
   xQueueSend(alertQueue, &job, 0);
 }
 
-static bool sendAlertToBackend(float value, const ChannelLimit &c) {
+static bool sendAlertToBackend(float value, const ChannelLimit &c)
+{
   if (WiFi.status() != WL_CONNECTED)
     return false;
 
-  HTTPClient http;
-  WiFiClientSecure client;
-  client.setInsecure();
-
-  http.begin(client, BACKEND_URL "/send-notification");
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("x-api-key", BACKEND_TOKEN);
-
-  JsonDocument doc;
-  doc["deviceid"] = DEVICE_ID;
-
-  char msg[51];
-  snprintf(msg, sizeof(msg), "%s out of range: %.2f",
-           c.name[0] ? c.name : "Channel", value);
-
-  doc["message"] = msg;
-
-  String payload;
-  serializeJson(doc, payload);
-
-  int code = http.POST(payload);
-  http.end();
-
-  if (code < 200 || code >= 300) {
-    Serial.printf("Alert POST failed (HTTP %d)\n", code);
+  if (httpsMutex && xSemaphoreTake(httpsMutex, pdMS_TO_TICKS(20000)) != pdTRUE)
+  {
+    Serial.println("[Alerts] Timeout esperando mutex HTTPS");
     return false;
   }
-  return true;
+
+  bool result = false;
+  {
+    HTTPClient http;
+    sharedHttpsClient.setCACert(GCS_ROOT_CA);
+
+    http.begin(sharedHttpsClient, BACKEND_URL "/send-notification");
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("x-api-key", BACKEND_TOKEN);
+
+    JsonDocument doc;
+    doc["deviceid"] = DEVICE_ID;
+
+    char msg[51];
+    snprintf(msg, sizeof(msg), "%s out of range: %.2f",
+             c.name[0] ? c.name : "Channel", value);
+    doc["message"] = msg;
+
+    String payload;
+    serializeJson(doc, payload);
+
+    int code = http.POST(payload);
+    http.end();
+
+    if (code < 200 || code >= 300)
+    {
+      Serial.printf("Alert POST failed (HTTP %d)\n", code);
+    }
+    else
+    {
+      result = true;
+    }
+  }
+
+  if (httpsMutex)
+    xSemaphoreGive(httpsMutex);
+  return result;
 }
 
 // ----- Digital edge alerts (DI / DO) with debounce + cooldown -----
@@ -96,13 +113,16 @@ static void checkDigitalAlerts(int count, const bool *current, bool *lastState,
                                const int *trigger, bool *notifyMobile,
                                bool *notifyEmail, bool *notifySms,
                                char (*name)[32], uint32_t *lastNotifyMs,
-                               uint32_t *pendingSinceMs) {
+                               uint32_t *pendingSinceMs)
+{
   uint32_t now = millis();
 
-  for (int i = 0; i < count; i++) {
+  for (int i = 0; i < count; i++)
+  {
     bool value = current[i];
 
-    if (value != lastState[i]) {
+    if (value != lastState[i])
+    {
       // Candidate state changed — start (or restart) the debounce timer.
       pendingSinceMs[i] = now;
       lastState[i] = value;
@@ -122,7 +142,8 @@ static void checkDigitalAlerts(int count, const bool *current, bool *lastState,
     if (now - lastNotifyMs[i] < DIO_COOLDOWN_MS)
       continue;
 
-    if (notifyMobile[i] || notifyEmail[i] || notifySms[i]) {
+    if (notifyMobile[i] || notifyEmail[i] || notifySms[i])
+    {
       enqueueAlert(value ? 1.0f : 0.0f, name[i]);
       lastNotifyMs[i] = now;
     }
@@ -132,18 +153,22 @@ static void checkDigitalAlerts(int count, const bool *current, bool *lastState,
   }
 }
 
-void checkDiAlerts() {
+void checkDiAlerts()
+{
   bool current[DI_COUNT];
-  for (int i = 0; i < DI_COUNT; i++) current[i] = hal.di[i];
+  for (int i = 0; i < DI_COUNT; i++)
+    current[i] = hal.di[i];
 
   checkDigitalAlerts(DI_COUNT, current, diLastState, diTrigger, diNotifyMobile,
                      diNotifyEmail, diNotifySms, diName, diLastNotifyMs,
                      diPendingSinceMs);
 }
 
-void checkDoAlerts() {
+void checkDoAlerts()
+{
   bool current[DO_COUNT];
-  for (int i = 0; i < DO_COUNT; i++) current[i] = hal.doo[i];
+  for (int i = 0; i < DO_COUNT; i++)
+    current[i] = hal.doo[i];
 
   checkDigitalAlerts(DO_COUNT, current, doLastState, doTrigger, doNotifyMobile,
                      doNotifyEmail, doNotifySms, doName, doLastNotifyMs,
@@ -152,17 +177,21 @@ void checkDoAlerts() {
 
 // ----- Analog limit alerts (AI / AO) with hysteresis, debounce + cooldown -----
 
-static void checkAnalogLimits(int count, const float *values, ChannelLimit *limits) {
+static void checkAnalogLimits(int count, const float *values, ChannelLimit *limits)
+{
   uint32_t now = millis();
 
-  for (int i = 0; i < count; i++) {
+  for (int i = 0; i < count; i++)
+  {
     float v = values[i];
     ChannelLimit &c = limits[i];
 
     bool isOut = (v < c.min || v > c.max);
 
-    if (isOut) {
-      if (!c.outOfRange) {
+    if (isOut)
+    {
+      if (!c.outOfRange)
+      {
         // Just left the valid range — start debounce, do not alert yet.
         c.outOfRange = true;
         c.firstOutOfRangeMs = now;
@@ -175,11 +204,14 @@ static void checkAnalogLimits(int count, const float *values, ChannelLimit *limi
       // the cooldown since the last alert for this channel has elapsed.
       // lastNotifyMs starts at 0, so the very first alert fires as soon as
       // the debounce window passes.
-      if (debounced && cooldownElapsed) {
+      if (debounced && cooldownElapsed)
+      {
         enqueueAlert(v, c.name);
         c.lastNotifyMs = now;
       }
-    } else {
+    }
+    else
+    {
       // Back inside range — reset debounce state, but keep lastNotifyMs so
       // the cooldown still applies if it flickers back out again shortly.
       c.outOfRange = false;
@@ -188,11 +220,13 @@ static void checkAnalogLimits(int count, const float *values, ChannelLimit *limi
   }
 }
 
-void checkAiLimits() {
+void checkAiLimits()
+{
   checkAnalogLimits(AI_COUNT, hal.ai, aiLimits);
 }
 
-void checkAoLimits() {
+void checkAoLimits()
+{
   checkAnalogLimits(AO_COUNT, hal.ao, aoLimits);
 }
 
@@ -202,16 +236,19 @@ void checkAoLimits() {
  * Persists an AlertJob to NVS so it survives reboots and Wi-Fi outages.
  * When the queue is full the oldest entry is evicted (FIFO).
  */
-static void saveAlertToNVS(const AlertJob &job) {
+static void saveAlertToNVS(const AlertJob &job)
+{
   Preferences prefs;
   prefs.begin("alerts", false);
 
   uint8_t cnt = prefs.getUChar("cnt", 0);
-  if (cnt >= NVS_MAX_ALERTS) {
-    for (uint8_t i = 0; i < NVS_MAX_ALERTS - 1; i++) {
+  if (cnt >= NVS_MAX_ALERTS)
+  {
+    for (uint8_t i = 0; i < NVS_MAX_ALERTS - 1; i++)
+    {
       char from[4], to[4];
       snprintf(from, sizeof(from), "a%d", i + 1);
-      snprintf(to,   sizeof(to),   "a%d", i);
+      snprintf(to, sizeof(to), "a%d", i);
       prefs.putString(to, prefs.getString(from, ""));
     }
     cnt = NVS_MAX_ALERTS - 1;
@@ -235,7 +272,8 @@ static void saveAlertToNVS(const AlertJob &job) {
  * Attempts to resend all alerts stored in NVS.
  * Alerts that succeed are removed; failures are kept for the next retry.
  */
-static void replayPendingAlerts() {
+static void replayPendingAlerts()
+{
   if (WiFi.status() != WL_CONNECTED)
     return;
 
@@ -243,7 +281,8 @@ static void replayPendingAlerts() {
   prefs.begin("alerts", false);
   uint8_t cnt = prefs.getUChar("cnt", 0);
 
-  if (cnt == 0) {
+  if (cnt == 0)
+  {
     prefs.end();
     return;
   }
@@ -253,26 +292,31 @@ static void replayPendingAlerts() {
   String unsent[NVS_MAX_ALERTS];
   uint8_t remaining = 0;
 
-  for (uint8_t i = 0; i < cnt; i++) {
+  for (uint8_t i = 0; i < cnt; i++)
+  {
     char key[4];
     snprintf(key, sizeof(key), "a%d", i);
     String json = prefs.getString(key, "");
-    if (json.length() == 0) continue;
+    if (json.length() == 0)
+      continue;
 
     JsonDocument doc;
-    if (deserializeJson(doc, json) != DeserializationError::Ok) continue;
+    if (deserializeJson(doc, json) != DeserializationError::Ok)
+      continue;
 
     AlertJob job{};
     job.value = doc["v"] | 0.0f;
     strncpy(job.limit.name, doc["n"] | "", sizeof(job.limit.name) - 1);
 
-    if (!sendAlertToBackend(job.value, job.limit)) {
+    if (!sendAlertToBackend(job.value, job.limit))
+    {
       if (remaining < NVS_MAX_ALERTS)
         unsent[remaining++] = json;
     }
   }
 
-  for (uint8_t i = 0; i < NVS_MAX_ALERTS; i++) {
+  for (uint8_t i = 0; i < NVS_MAX_ALERTS; i++)
+  {
     char key[4];
     snprintf(key, sizeof(key), "a%d", i);
     if (i < remaining)
@@ -286,20 +330,25 @@ static void replayPendingAlerts() {
   Serial.printf("NVS replay: %d sent, %d remaining\n", cnt - remaining, remaining);
 }
 
-void taskAlerts(void *) {
+void taskAlerts(void *)
+{
   AlertJob job;
   uint32_t lastReplayMs = 0;
 
   replayPendingAlerts();
 
-  for (;;) {
-    if (millis() - lastReplayMs >= 30000) {
+  for (;;)
+  {
+    if (millis() - lastReplayMs >= 30000)
+    {
       lastReplayMs = millis();
       replayPendingAlerts();
     }
 
-    if (xQueueReceive(alertQueue, &job, pdMS_TO_TICKS(1000))) {
-      if (!sendAlertToBackend(job.value, job.limit)) {
+    if (xQueueReceive(alertQueue, &job, pdMS_TO_TICKS(1000)))
+    {
+      if (!sendAlertToBackend(job.value, job.limit))
+      {
         saveAlertToNVS(job);
       }
     }

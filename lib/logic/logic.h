@@ -10,18 +10,24 @@
 #define MAX_INPUTS 2
 
 /** @brief Identifies the computation performed by a LogicBlock. */
-enum BlockType {
-  BLOCK_MATH    = 0, ///< Arithmetic: add, subtract, multiply, divide.
+enum BlockType
+{
+  BLOCK_MATH = 0,    ///< Arithmetic: add, subtract, multiply, divide.
   BLOCK_COMPARE = 1, ///< Comparison: >, <, ==, >=, <=. Output is 0.0 or 1.0.
-  BLOCK_TIMER   = 2, ///< On-delay timer: output goes high after input is high for N ms.
-  BLOCK_IO      = 3  ///< Reads from AI/DI or writes to AO/DO.
+  BLOCK_TIMER = 2,   ///< On-delay timer: output goes high after input is high for N ms.
+  BLOCK_IO = 3       ///< Reads from AI/DI or writes to AO/DO.
 };
 
 /** @brief Determines where a block gets its input value from. */
-enum InputKind { INPUT_CONSTANT = 0, INPUT_BLOCK = 1 };
+enum InputKind
+{
+  INPUT_CONSTANT = 0,
+  INPUT_BLOCK = 1
+};
 
 /** @brief Physical IO type used by BLOCK_IO nodes. */
-enum IOType {
+enum IOType
+{
   IO_AI = 0, ///< Analog input read.
   IO_DI = 1, ///< Digital input read.
   IO_AO = 2, ///< Analog output write.
@@ -33,7 +39,8 @@ enum IOType {
  *
  * Either holds a literal constant or references the lastValue of another block.
  */
-struct BlockInput {
+struct BlockInput
+{
   uint8_t kind;    ///< INPUT_CONSTANT or INPUT_BLOCK.
   float value;     ///< Literal value (used when kind == INPUT_CONSTANT).
   int fromBlockId; ///< Source block ID (used when kind == INPUT_BLOCK).
@@ -45,10 +52,11 @@ struct BlockInput {
  * Loaded from JSON by loadLogicFromJson(). Evaluated in index order
  * across 3 passes per cycle by executeLogic().
  */
-struct LogicBlock {
+struct LogicBlock
+{
   uint8_t id;
-  uint8_t type;   ///< BlockType value.
-  uint8_t op;     ///< Operation code (meaning depends on type).
+  uint8_t type; ///< BlockType value.
+  uint8_t op;   ///< Operation code (meaning depends on type).
 
   uint8_t ioType;    ///< IOType value: IO_AI, IO_DI, IO_AO, or IO_DO (BLOCK_IO only). 255 = invalid.
   uint8_t ioChannel; ///< Zero-based physical channel index (BLOCK_IO only).
@@ -113,3 +121,13 @@ void executeLogic();
  * @param pv Unused.
  */
 void taskLogic(void *pv);
+
+extern volatile bool logicSyncRequested; // Set to true by syncLogicFromBackend(), checked in the main loop to trigger a logic sync from the backend.
+
+/**
+ * @brief Requests a logic sync from the backend.
+ *
+ * Sets logicSyncRequested = true, which will be checked in the main loop.
+ * The backend will then be queried for the latest logic program JSON.
+ */
+void syncLogicFromBackend();

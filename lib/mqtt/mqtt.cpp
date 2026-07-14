@@ -5,6 +5,7 @@
 #include <hal.h>
 #include <logic.h>
 #include <ota.h>
+#include <backend.h>
 
 WiFiClientSecure wifiClient;
 PubSubClient mqtt(wifiClient);
@@ -50,8 +51,8 @@ static void buildOnlineStatusPayload(char *buf, size_t bufSize)
   uint32_t uptimeSec = millis() / 1000;
 
   snprintf(buf, bufSize,
-           "{\"online\":true,\"ip\":\"%s\",\"uptime\":%lu}",
-           ip.c_str(), uptimeSec);
+           "{\"online\":true,\"ip\":\"%s\",\"uptime\":%lu,\"fwVersion\":\"%s\"}",
+           ip.c_str(), uptimeSec, currentFwVersion.c_str());
 }
 
 static void publishOnlineStatus()
@@ -73,6 +74,13 @@ void connectMQTT()
   if (mqtt.connected())
     return;
 
+  // mesma serialização global de TLS usada pelo backend.
+  if (httpsMutex && xSemaphoreTake(httpsMutex, pdMS_TO_TICKS(20000)) != pdTRUE)
+  {
+    Serial.println("[MQTT] Timeout esperando mutex HTTPS");
+    return;
+  }
+
   uint32_t now = millis();
   Serial.printf("[MQTT] Connecting to %s:%d (attempt #%lu, RSSI=%d dBm, freeHeap=%u)...\n",
                 MQTT_HOST, MQTT_PORT, ++mqttReconnectAttempts, WiFi.RSSI(),
@@ -81,15 +89,11 @@ void connectMQTT()
   char clientId[64];
   snprintf(clientId, sizeof(clientId), "%s", DEVICE_ID.c_str());
 
-  // Last Will: if the connection drops uncleanly, the broker publishes this
-  // retained "offline" message on our behalf.
   const char *willMessage = "{\"online\":false}";
 
   uint32_t t = millis();
-
   bool ok = mqtt.connect(clientId, MQTT_USER, MQTT_PASS,
                          topicStatus, 1, true, willMessage);
-
   Serial.printf("DEPOIS connect() (%lu ms)\n", millis() - t);
 
   uint32_t elapsed = millis() - now;
@@ -101,8 +105,7 @@ void connectMQTT()
 
     char statusPayload[96];
     buildOnlineStatusPayload(statusPayload, sizeof(statusPayload));
-
-    bool sent = mqtt.publish(topicStatus, statusPayload, true); // retained
+    bool sent = mqtt.publish(topicStatus, statusPayload, true);
     Serial.printf("[MQTT] Status published %s: %s\n",
                   sent ? "OK" : "FAILED", statusPayload);
   }
@@ -113,6 +116,9 @@ void connectMQTT()
   }
 
   lastConnectAttemptMs = now;
+
+  if (httpsMutex)
+    xSemaphoreGive(httpsMutex);
 }
 
 void mqttCallback(char *topic, byte *payload, unsigned int length)
@@ -249,6 +255,24 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     Serial.println(logicJsonCache);
     Serial.println("============================================");
   }
+
+  if (strcmp(type, "get_channels") == 0)
+  {
+    Serial.println("[MQTT] get_channels command received, refreshing channel config");
+    bool ok = fetchAllChannels();
+    Serial.printf("[MQTT] fetchAllChannels() %s\n", ok ? "OK" : "FAILED");
+    return;
+  }
+
+  if (strcmp(type, "logic_sync") == 0)
+  {
+    Serial.println("[MQTT] logic_sync recebido — agendando busca no backend");
+    // Não faz a chamada HTTP aqui dentro: só sinaliza. taskLogic() processa
+    // fora do contexto do mqtt.loop(), pra não travar o cliente MQTT durante
+    // a requisição HTTPS.
+    logicSyncRequested = true;
+    return;
+  }
 }
 
 void taskMQTT(void *pvParameters)
@@ -379,7 +403,7 @@ void taskTelemetry(void *pvParameters)
 
 void initMQTT()
 {
-  wifiClient.setInsecure();
+  wifiClient.setCACert(HIVEMQ_ROOT_CA);
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
   mqtt.setBufferSize(MQTT_BUFFER_SIZE);
