@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <cstdint>
+#include <hw_config.h>
 
 /** Maximum number of logic blocks in a single program. */
 #define MAX_BLOCKS 32
@@ -81,6 +82,9 @@ extern bool logicLoaded;
 
 /** Preferences instance used to persist the logic program JSON to NVS flash. */
 extern Preferences prefs;
+
+extern bool doOutputDriven[DO_COUNT];
+extern bool aoOutputDriven[AO_COUNT];
 
 /**
  * @brief Serialises the raw JSON string of the current logic program to NVS flash.

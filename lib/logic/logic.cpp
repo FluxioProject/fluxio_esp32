@@ -10,6 +10,8 @@ bool logicLoaded = false;
 Preferences prefs;
 int blockIdToIndex[MAX_BLOCKS];
 LogicBlock logicBlocks[MAX_BLOCKS];
+bool doOutputDriven[DO_COUNT];
+bool aoOutputDriven[AO_COUNT];
 
 void saveLogicToFlash(const String &json)
 {
@@ -57,6 +59,11 @@ bool loadLogicFromJson(JsonDocument &doc)
   for (int i = 0; i < MAX_BLOCKS; i++)
     blockIdToIndex[i] = -1;
 
+  for (int i = 0; i < DO_COUNT; i++)
+    doOutputDriven[i] = false;
+  for (int i = 0; i < AO_COUNT; i++)
+    aoOutputDriven[i] = false;
+
   if (!doc["blocks"].is<JsonArray>())
     return false;
 
@@ -92,6 +99,20 @@ bool loadLogicFromJson(JsonDocument &doc)
     {
       lb.ioType = b["io"][0];
       lb.ioChannel = b["io"][1];
+
+      // Marca esse canal como "pertence ao programa atual" quando for
+      // um bloco de SAÍDA (tem input) — blocos de entrada (AI/DI) não
+      // contam, já que não escrevem em hal.ao/hal.doo.
+      JsonArray inputsCheck = b["in"];
+      bool isOutputBlock = inputsCheck.size() > 0;
+
+      if (isOutputBlock)
+      {
+        if (lb.ioType == IO_DO && lb.ioChannel < DO_COUNT)
+          doOutputDriven[lb.ioChannel] = true;
+        else if (lb.ioType == IO_AO && lb.ioChannel < AO_COUNT)
+          aoOutputDriven[lb.ioChannel] = true;
+      }
     }
 
     blockIdToIndex[lb.id] = logicBlockCount;
@@ -156,6 +177,28 @@ bool loadLogicFromJson(JsonDocument &doc)
 
   logicLoaded = true;
   Serial.printf("Total blocks loaded: %d\n", logicBlockCount);
+  bool anyOrphanReset = false;
+  for (int i = 0; i < DO_COUNT; i++)
+  {
+    if (!doOutputDriven[i] && hal.doo[i] != 0)
+    {
+      Serial.printf("[Logic] DO[%d] não pertence mais ao programa atual — resetando para 0\n", i);
+      hal.doo[i] = 0;
+      anyOrphanReset = true;
+    }
+  }
+  for (int i = 0; i < AO_COUNT; i++)
+  {
+    if (!aoOutputDriven[i] && hal.ao[i] != 0)
+    {
+      Serial.printf("[Logic] AO[%d] não pertence mais ao programa atual — resetando para 0\n", i);
+      hal.ao[i] = 0;
+      anyOrphanReset = true;
+    }
+  }
+  if (anyOrphanReset)
+    hal.updateIO();
+
   Serial.println("==================");
   return true;
 }
