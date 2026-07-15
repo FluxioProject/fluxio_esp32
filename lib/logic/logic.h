@@ -6,7 +6,7 @@
 #include <hw_config.h>
 
 /** Maximum number of logic blocks in a single program. */
-#define MAX_BLOCKS 32
+#define MAX_BLOCKS 64
 /** Maximum number of inputs per logic block. */
 #define MAX_INPUTS 2
 
