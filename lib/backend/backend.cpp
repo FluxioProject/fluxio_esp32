@@ -210,13 +210,14 @@ bool fetchAllChannels()
           strncpy(diName[index], name, sizeof(diName[index]) - 1);
           diName[index][sizeof(diName[index]) - 1] = '\0';
 
+          diTrigger[index] = c["trigger"] | 1; // default HIGH
           diNotifyMobile[index] = c["notifyMobile"] | false;
           diNotifyEmail[index] = c["notifyEmail"] | false;
           diNotifySms[index] = c["notifySms"] | false;
 
-          Serial.printf("DI[%d] name=%s mob=%d email=%d sms=%d\n", index,
-                        diName[index], diNotifyMobile[index], diNotifyEmail[index],
-                        diNotifySms[index]);
+          Serial.printf("DI[%d] name=%s trigger=%d mob=%d email=%d sms=%d\n", index,
+                        diName[index], diTrigger[index], diNotifyMobile[index],
+                        diNotifyEmail[index], diNotifySms[index]);
         }
 
         // ================= DO =================
@@ -232,13 +233,14 @@ bool fetchAllChannels()
           strncpy(doName[index], name, sizeof(doName[index]) - 1);
           doName[index][sizeof(doName[index]) - 1] = '\0';
 
+          doTrigger[index] = c["trigger"] | 1; // default HIGH
           doNotifyMobile[index] = c["notifyMobile"] | false;
           doNotifyEmail[index] = c["notifyEmail"] | false;
           doNotifySms[index] = c["notifySms"] | false;
 
-          Serial.printf("DO[%d] name=%s mob=%d email=%d sms=%d\n", index,
-                        doName[index], doNotifyMobile[index], doNotifyEmail[index],
-                        doNotifySms[index]);
+          Serial.printf("DO[%d] name=%s trigger=%d mob=%d email=%d sms=%d\n", index,
+                        doName[index], doTrigger[index], doNotifyMobile[index],
+                        doNotifyEmail[index], doNotifySms[index]);
         }
 
         result = true;
@@ -284,7 +286,10 @@ void setInitChannels()
     diTrigger[i] = 1;
   }
   for (int i = 0; i < DO_COUNT; i++)
+  {
     doLastState[i] = hal.doo[i];
+    doTrigger[i] = 1;
+  }
 
   const uint32_t timeoutMs = 25000;
   uint32_t start = millis();
