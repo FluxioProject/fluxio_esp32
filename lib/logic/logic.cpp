@@ -91,6 +91,31 @@ bool loadLogicFromJson(JsonDocument &doc)
     lb.timerStartMs = 0;
     lb.timerRunning = false;
 
+    // PID fields: always reset to defaults on every load, regardless of
+    // block type. This slot in logicBlocks[] may have held a different
+    // block type (or a different PID config) before this reload, and a
+    // stale kp/ki/kd/integral left over from a previous program would be
+    // silently wrong if this ever becomes a PID block later without an
+    // explicit "pid" object in the JSON.
+    lb.pidKp = 0.0f;
+    lb.pidKi = 0.0f;
+    lb.pidKd = 0.0f;
+    lb.pidOutMin = 0.0f;
+    lb.pidOutMax = 100.0f;
+    lb.pidIntegral = 0.0f;
+    lb.pidPrevError = 0.0f;
+    lb.pidLastRunMs = 0;
+
+    if (lb.type == BLOCK_PID && b["pid"].is<JsonObject>())
+    {
+      JsonObject pidCfg = b["pid"];
+      lb.pidKp = pidCfg["kp"] | 0.0f;
+      lb.pidKi = pidCfg["ki"] | 0.0f;
+      lb.pidKd = pidCfg["kd"] | 0.0f;
+      lb.pidOutMin = pidCfg["outMin"] | 0.0f;
+      lb.pidOutMax = pidCfg["outMax"] | 100.0f;
+    }
+
     // IO
     lb.ioType = 255; // invalid by default
     lb.ioChannel = 0;
@@ -135,6 +160,12 @@ bool loadLogicFromJson(JsonDocument &doc)
 
     Serial.printf("Block id=%d type=%d ioType=%d ioCh=%d inputs=%d\n", lb.id,
                   lb.type, lb.ioType, lb.ioChannel, lb.inputCount);
+
+    if (lb.type == BLOCK_PID)
+    {
+      Serial.printf("  pid kp=%.4f ki=%.4f kd=%.4f outMin=%.2f outMax=%.2f\n",
+                    lb.pidKp, lb.pidKi, lb.pidKd, lb.pidOutMin, lb.pidOutMax);
+    }
 
     for (int j = 0; j < lb.inputCount; j++)
     {
@@ -347,6 +378,95 @@ void executeLogic()
           // reset when input goes low
           b.timerRunning = false;
           b.lastValue = 0.0f;
+        }
+        break;
+      }
+      case BLOCK_PID:
+      {
+        float enable = getInputValue(b.inputs[0]);
+
+        if (enable <= 0.5f)
+        {
+          // Disabled: force output to 0 and reset internal state, so a
+          // later re-enable starts from a clean slate instead of
+          // resuming a stale integral/derivative from before it was
+          // turned off. Runs on every pass so the disabled output (0)
+          // is immediately consistent for anything reading it this
+          // same executeLogic() call.
+          b.pidIntegral = 0.0f;
+          b.pidPrevError = 0.0f;
+          b.pidLastRunMs = 0;
+          b.lastValue = 0.0f;
+          break;
+        }
+
+        // The integral/derivative state must only be updated ONCE per
+        // executeLogic() call, not once per pass — executeLogic() runs
+        // 3 passes per 50ms cycle to let cross-block references settle
+        // (see the loop above), but a stateful accumulator like the PID
+        // integral would otherwise accumulate 3x every cycle if it ran
+        // on every pass, throwing off the tuning by a factor that
+        // depends on how many passes had already converged. Gating on
+        // pass == 0 keeps the state update to exactly once per cycle.
+        // (b.lastValue itself is only (re)computed here too — later
+        // passes just keep reading the value computed here, same as
+        // BLOCK_TIMER does for its own state.)
+        if (pass == 0)
+        {
+          float pv = getInputValue(b.inputs[1]);
+          float sp = getInputValue(b.inputs[2]);
+
+          uint32_t now = millis();
+          // On the very first run (pidLastRunMs == 0, e.g. right after
+          // load or after being re-enabled), fall back to the nominal
+          // scan period instead of computing dt against a stale/zero
+          // timestamp.
+          float dt = (b.pidLastRunMs == 0) ? 0.05f
+                                            : (now - b.pidLastRunMs) / 1000.0f;
+          b.pidLastRunMs = now;
+
+          float error = sp - pv;
+
+          // Tentative integral update — only committed below if it
+          // doesn't push the (unclamped) output past outMin/outMax.
+          float tentativeIntegral = b.pidIntegral + error * dt;
+
+          float derivative =
+              (dt > 1e-6f) ? (error - b.pidPrevError) / dt : 0.0f;
+          b.pidPrevError = error;
+
+          float unclampedOutput = b.pidKp * error +
+                                   b.pidKi * tentativeIntegral +
+                                   b.pidKd * derivative;
+
+          // -----------------------------------------------------------
+          // Anti-windup (conditional integration / clamping method):
+          // only let the integral accumulate if the resulting output
+          // would actually stay within [outMin, outMax]. If it would
+          // saturate, freeze the integral at its previous value instead
+          // of committing the tentative one.
+          //
+          // This is what keeps a noisy/spiky input from "winding up"
+          // the integral term far past what's needed to saturate the
+          // output — without it, a single spike could push the integral
+          // way past outMax, and the controller would then keep the
+          // output pinned high (or low) for a long time afterwards,
+          // even once the input settles back to normal, until the
+          // integral slowly unwinds. Freezing it here means the output
+          // comes back down as soon as the spike is gone, instead of
+          // lagging behind it.
+          // -----------------------------------------------------------
+          float output = unclampedOutput;
+          if (output > b.pidOutMax)
+            output = b.pidOutMax;
+          else if (output < b.pidOutMin)
+            output = b.pidOutMin;
+
+          if (unclampedOutput <= b.pidOutMax && unclampedOutput >= b.pidOutMin)
+            b.pidIntegral = tentativeIntegral;
+          // else: leave b.pidIntegral unchanged (frozen this cycle).
+
+          b.lastValue = output;
         }
         break;
       }

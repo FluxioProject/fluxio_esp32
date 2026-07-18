@@ -7,8 +7,15 @@
 
 /** Maximum number of logic blocks in a single program. */
 #define MAX_BLOCKS 64
-/** Maximum number of inputs per logic block. */
-#define MAX_INPUTS 2
+/**
+ * Maximum number of inputs per logic block.
+ *
+ * Bumped from 2 to 3 to support BLOCK_PID, which needs three signal
+ * inputs (enable, process variable, setpoint). Every other block type
+ * still only uses its first 1-2 slots; the extra slot just goes unused
+ * for them (a few bytes of padding per block, negligible on ESP32).
+ */
+#define MAX_INPUTS 3
 
 /** @brief Identifies the computation performed by a LogicBlock. */
 enum BlockType
@@ -16,7 +23,18 @@ enum BlockType
   BLOCK_MATH = 0,    ///< Arithmetic: add, subtract, multiply, divide.
   BLOCK_COMPARE = 1, ///< Comparison: >, <, ==, >=, <=. Output is 0.0 or 1.0.
   BLOCK_TIMER = 2,   ///< On-delay timer: output goes high after input is high for N ms.
-  BLOCK_IO = 3       ///< Reads from AI/DI or writes to AO/DO.
+  BLOCK_IO = 3,      ///< Reads from AI/DI or writes to AO/DO.
+  /**
+   * PID controller. Inputs (see MAX_INPUTS above):
+   *   inputs[0] = enable (>0.5 = running, otherwise output forced to 0
+   *               and internal state reset)
+   *   inputs[1] = PV (process variable) — the value being controlled
+   *   inputs[2] = setpoint — the desired target value
+   * Gains and output clamp are NOT inputs; they're static tuning
+   * parameters read once from the block's "pid" JSON object (see
+   * loadLogicFromJson()) and stored in the pid* fields below.
+   */
+  BLOCK_PID = 4
 };
 
 /** @brief Determines where a block gets its input value from. */
@@ -68,6 +86,22 @@ struct LogicBlock
   float lastValue;       ///< Result of the last evaluation; used as input by dependent blocks.
   uint32_t timerStartMs; ///< millis() when the timer input last went high (BLOCK_TIMER only).
   bool timerRunning;     ///< True while the timer input is held high (BLOCK_TIMER only).
+
+  // ---------------------------------------------------------------------
+  // BLOCK_PID-only fields. Present on every LogicBlock (same pattern as
+  // timerStartMs/timerRunning above, which exist even on non-timer
+  // blocks) so the struct stays a flat, fixed-size array element. Ignored
+  // for every block type other than BLOCK_PID.
+  // ---------------------------------------------------------------------
+  float pidKp;    ///< Proportional gain.
+  float pidKi;    ///< Integral gain.
+  float pidKd;    ///< Derivative gain.
+  float pidOutMin; ///< Minimum allowed output (clamp).
+  float pidOutMax; ///< Maximum allowed output (clamp).
+
+  float pidIntegral;   ///< Accumulated integral term (engineering units of output).
+  float pidPrevError;  ///< Error computed on the previous cycle, for the derivative term.
+  uint32_t pidLastRunMs; ///< millis() at the last state update. 0 = never run yet.
 };
 
 /** Maps block ID → index in logicBlocks[]. -1 if the ID is not present. */
