@@ -83,7 +83,14 @@ void HAL::updateIO()
         if (eng > aiMapMax[i])
             eng = aiMapMax[i];
 
-        ai[i] = eng;
+        // Deadband: only move ai[i] once the new reading drifts far enough
+        // from the last published value. Prevents downstream on/off logic
+        // (relays, etc.) from chattering on small sensor noise.
+        if (fabsf(eng - aiLast[i]) >= aiDeadband[i])
+        {
+            aiLast[i] = eng;
+        }
+        ai[i] = aiLast[i];
     }
 
     // =====================================================
@@ -160,7 +167,7 @@ void HAL::updateIO()
                 Serial.print(", ");
         }
         Serial.print("] DO: [");
-        
+
         for (int i = 0; i < DO_COUNT; i++)
         {
             Serial.print(doo[i]);

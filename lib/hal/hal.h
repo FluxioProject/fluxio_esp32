@@ -14,10 +14,10 @@ class HAL
 {
 public:
     // ----- IO values — read/written by logic, mqtt, alerts, serial_test -----
-    float ai[AI_COUNT]  = {0}; ///< Analog inputs in engineering units (mapped from 0-10V).
-    float ao[AO_COUNT]  = {0}; ///< Analog outputs in engineering units (mapped to 4-20 mA).
-    int   di[DI_COUNT]  = {0}; ///< Digital inputs (0 or 1).
-    int   doo[DO_COUNT] = {0}; ///< Digital outputs (0 or 1).
+    float ai[AI_COUNT] = {0}; ///< Analog inputs in engineering units (mapped from 0-10V).
+    float ao[AO_COUNT] = {0}; ///< Analog outputs in engineering units (mapped to 4-20 mA).
+    int di[DI_COUNT] = {0};   ///< Digital inputs (0 or 1).
+    int doo[DO_COUNT] = {0};  ///< Digital outputs (0 or 1).
 
 #ifndef IO_SIMULATION
     // ----- Mapping ranges — populated by backend.cpp after fetchAllChannels() -----
@@ -25,6 +25,12 @@ public:
     float aiMapMax[AI_COUNT] = {100}; ///< Engineering maximum for each AI channel.
     float aoMapMin[AO_COUNT] = {0};   ///< Engineering minimum for each AO channel.
     float aoMapMax[AO_COUNT] = {100}; ///< Engineering maximum for each AO channel.
+
+    /// Deadband per AI channel, in engineering units. A new reading only
+    /// replaces ai[i] once it differs from the last published value by
+    /// at least this amount. Set to 0 to disable for a given channel.
+    /// Default value can be overridden per channel by backend.cpp.
+    float aiDeadband[AI_COUNT] = {0.5f, 0.5f, 0.5f, 0.5f};
 #endif
 
     /**
@@ -39,9 +45,9 @@ public:
      * @brief Reads all physical inputs into the IO arrays and writes all
      *        output arrays to the corresponding hardware peripherals.
      *
-     * AI: ADC raw (averaged) → voltage → undo divider → 0-10V → engineering units.
-     * AO: engineering units → mA → voltage → PWM duty cycle.
-     * DI: digitalRead(); DO: digitalWrite().
+     * AI: ADC raw (averaged) → voltage → undo divider → 0-10V → engineering
+     * units → deadband filter. AO: engineering units → mA → voltage → PWM
+     * duty cycle. DI: digitalRead(); DO: digitalWrite().
      * In simulation mode, AI and DI are filled with random values.
      */
     void updateIO();
@@ -59,6 +65,11 @@ private:
      *        Reduces noise from floating/unstable analog inputs.
      */
     static float readAdcAveraged(int pin);
+
+#ifndef IO_SIMULATION
+    /// Last value published to ai[i], used as the deadband reference.
+    float aiLast[AI_COUNT] = {0};
+#endif
 };
 
 /** Global HAL instance — include hal.h and use `hal.ai[i]`, `hal.doo[i]`, etc. */
