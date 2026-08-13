@@ -59,5 +59,5 @@ const int PWM_RES  = 8;
 // ============================================================
 //  Misc hardware timings
 // ============================================================
-#define WDT_TIMER 10    // Watchdog timeout in seconds
+#define WDT_TIMER 20    // Watchdog timeout in seconds
 #define TIMEOUT_WIFI 18 // Wi-Fi connect attempts before AP fallback

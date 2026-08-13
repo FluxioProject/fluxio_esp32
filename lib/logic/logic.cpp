@@ -8,7 +8,7 @@
 uint8_t logicBlockCount = 0;
 bool logicLoaded = false;
 Preferences prefs;
-int blockIdToIndex[MAX_BLOCKS];
+int blockIdToIndex[MAX_BLOCK_ID];
 LogicBlock logicBlocks[MAX_BLOCKS];
 bool doOutputDriven[DO_COUNT];
 bool aoOutputDriven[AO_COUNT];
@@ -56,7 +56,7 @@ bool loadLogicFromFlash()
 
 bool loadLogicFromJson(JsonDocument &doc)
 {
-  for (int i = 0; i < MAX_BLOCKS; i++)
+  for (int i = 0; i < MAX_BLOCK_ID; i++)
     blockIdToIndex[i] = -1;
 
   for (int i = 0; i < DO_COUNT; i++)
@@ -79,7 +79,7 @@ bool loadLogicFromJson(JsonDocument &doc)
 
     lb.id = b["id"];
 
-    if (lb.id >= MAX_BLOCKS)
+    if (lb.id >= MAX_BLOCK_ID)
     {
       Serial.printf("Block id=%d out of range, skipping\n", lb.id);
       continue;
@@ -193,7 +193,9 @@ bool loadLogicFromJson(JsonDocument &doc)
     for (int j = 0; j < lb.inputCount; j++)
     {
       BlockInput &in = lb.inputs[j];
-      if (in.kind != INPUT_CONSTANT && blockIdToIndex[in.fromBlockId] < 0)
+      if (in.kind != INPUT_CONSTANT &&
+          (in.fromBlockId < 0 || in.fromBlockId >= MAX_BLOCK_ID ||
+           blockIdToIndex[in.fromBlockId] < 0))
       {
         Serial.printf(
             "Invalid logic program: block id=%d input[%d] references "
@@ -239,7 +241,9 @@ float getInputValue(const BlockInput &in)
   if (in.kind == INPUT_CONSTANT)
     return in.value;
 
-  int idx = blockIdToIndex[in.fromBlockId];
+  int idx = (in.fromBlockId >= 0 && in.fromBlockId < MAX_BLOCK_ID)
+                ? blockIdToIndex[in.fromBlockId]
+                : -1;
 
   if (idx < 0 || idx >= logicBlockCount)
   {
@@ -422,7 +426,7 @@ void executeLogic()
           // scan period instead of computing dt against a stale/zero
           // timestamp.
           float dt = (b.pidLastRunMs == 0) ? 0.05f
-                                            : (now - b.pidLastRunMs) / 1000.0f;
+                                           : (now - b.pidLastRunMs) / 1000.0f;
           b.pidLastRunMs = now;
 
           float error = sp - pv;
@@ -436,8 +440,8 @@ void executeLogic()
           b.pidPrevError = error;
 
           float unclampedOutput = b.pidKp * error +
-                                   b.pidKi * tentativeIntegral +
-                                   b.pidKd * derivative;
+                                  b.pidKi * tentativeIntegral +
+                                  b.pidKd * derivative;
 
           // -----------------------------------------------------------
           // Anti-windup (conditional integration / clamping method):
@@ -550,6 +554,8 @@ void syncLogicFromBackend()
     return;
   }
 
+  Serial.printf("[Logic] json recebido de fetchLogicFromBackend, len=%d\n", json.length());
+  
   if (updatedAt.length() > 0 && updatedAt == lastSyncedUpdatedAt)
   {
     Serial.println("[Logic] Lógica do backend sem mudanças, ignorando");

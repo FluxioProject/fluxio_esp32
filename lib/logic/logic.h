@@ -7,6 +7,14 @@
 
 /** Maximum number of logic blocks in a single program. */
 #define MAX_BLOCKS 64
+
+/**
+* Ceiling for block *ids* (not the same as MAX_BLOCKS, which caps how
+* many blocks fit in logicBlocks[]). Ids come from the backend as
+* uint8_t, so 256 is the hard ceiling here — id can never exceed 255.
+*/
+#define MAX_BLOCK_ID 256
+
 /**
  * Maximum number of inputs per logic block.
  *
@@ -105,7 +113,7 @@ struct LogicBlock
 };
 
 /** Maps block ID → index in logicBlocks[]. -1 if the ID is not present. */
-extern int blockIdToIndex[MAX_BLOCKS];
+extern int blockIdToIndex[MAX_BLOCK_ID];
 /** Flat array of all loaded blocks. Valid indices are [0, logicBlockCount). */
 extern LogicBlock logicBlocks[MAX_BLOCKS];
 

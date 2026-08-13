@@ -72,6 +72,7 @@ static bool sendAlertToBackend(float value, const ChannelLimit &c)
   bool result = false;
   {
     HTTPClient http;
+    sharedHttpsClient.stop();
     sharedHttpsClient.setCACert(GCS_ROOT_CA);
 
     http.begin(sharedHttpsClient, BACKEND_URL "/send-notification");

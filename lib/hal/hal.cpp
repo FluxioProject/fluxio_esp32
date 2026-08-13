@@ -6,19 +6,25 @@ void HAL::init()
 {
 #ifndef IO_SIMULATION
     for (int i = 0; i < DI_COUNT; i++)
-        if (PIN_DI[i] >= 0) pinMode(PIN_DI[i], INPUT_PULLDOWN);
+        if (PIN_DI[i] >= 0)
+            pinMode(PIN_DI[i], INPUT_PULLDOWN);
 
     for (int i = 0; i < DO_COUNT; i++)
-        if (PIN_DO[i] >= 0) pinMode(PIN_DO[i], OUTPUT);
+        if (PIN_DO[i] >= 0)
+            pinMode(PIN_DO[i], OUTPUT);
 
-    for (int i = 0; i < AI_COUNT; i++) {
-        if (PIN_AI[i] < 0) continue;
+    for (int i = 0; i < AI_COUNT; i++)
+    {
+        if (PIN_AI[i] < 0)
+            continue;
         // Explicit attenuation for full 0-3.3V ADC range
         analogSetPinAttenuation(PIN_AI[i], ADC_11db);
     }
 
-    for (int i = 0; i < AO_COUNT; i++) {
-        if (PIN_AO[i] < 0) continue;
+    for (int i = 0; i < AO_COUNT; i++)
+    {
+        if (PIN_AO[i] < 0)
+            continue;
         ledcSetup(PWM_CH[i], PWM_FREQ, PWM_RES);
         ledcAttachPin(PIN_AO[i], PWM_CH[i]);
     }
@@ -36,7 +42,8 @@ float HAL::mapf(float x, float in_min, float in_max,
 float HAL::readAdcAveraged(int pin)
 {
     uint32_t sum = 0;
-    for (int s = 0; s < AI_OVERSAMPLE; s++) {
+    for (int s = 0; s < AI_OVERSAMPLE; s++)
+    {
         sum += analogRead(pin);
     }
     return (float)sum / AI_OVERSAMPLE;
@@ -54,8 +61,10 @@ void HAL::updateIO()
     // =====================================================
     // ANALOG INPUT (AI) — 0-10V via resistive divider → Engineering
     // =====================================================
-    for (int i = 0; i < AI_COUNT; i++) {
-        if (PIN_AI[i] < 0) continue;
+    for (int i = 0; i < AI_COUNT; i++)
+    {
+        if (PIN_AI[i] < 0)
+            continue;
 
         // Oversampled read filters ESP32 ADC noise, especially on
         // floating/unconnected inputs
@@ -69,8 +78,10 @@ void HAL::updateIO()
         float eng = mapf(vsensor, 0.0f, AI_INPUT_MAX_VOLTS, aiMapMin[i], aiMapMax[i]);
 
         // Safety clamp
-        if (eng < aiMapMin[i]) eng = aiMapMin[i];
-        if (eng > aiMapMax[i]) eng = aiMapMax[i];
+        if (eng < aiMapMin[i])
+            eng = aiMapMin[i];
+        if (eng > aiMapMax[i])
+            eng = aiMapMax[i];
 
         ai[i] = eng;
     }
@@ -79,35 +90,83 @@ void HAL::updateIO()
     // DIGITAL INPUT
     // =====================================================
     for (int i = 0; i < DI_COUNT; i++)
-        if (PIN_DI[i] >= 0) di[i] = digitalRead(PIN_DI[i]);
+        if (PIN_DI[i] >= 0)
+            di[i] = digitalRead(PIN_DI[i]);
 
     // =====================================================
     // DIGITAL OUTPUT
     // =====================================================
     for (int i = 0; i < DO_COUNT; i++)
-        if (PIN_DO[i] >= 0) digitalWrite(PIN_DO[i], doo[i] ? HIGH : LOW);
+        if (PIN_DO[i] >= 0)
+            digitalWrite(PIN_DO[i], doo[i] ? HIGH : LOW);
 
     // =====================================================
     // ANALOG OUTPUT (AO) — Engineering → 4–20 mA (unchanged, still current loop)
     // =====================================================
-    for (int i = 0; i < AO_COUNT; i++) {
-        if (PIN_AO[i] < 0) continue;
+    for (int i = 0; i < AO_COUNT; i++)
+    {
+        if (PIN_AO[i] < 0)
+            continue;
 
         float eng = ao[i];
 
-        if (eng < aoMapMin[i]) eng = aoMapMin[i];
-        if (eng > aoMapMax[i]) eng = aoMapMax[i];
+        if (eng < aoMapMin[i])
+            eng = aoMapMin[i];
+        if (eng > aoMapMax[i])
+            eng = aoMapMax[i];
 
-        float imA  = mapf(eng, aoMapMin[i], aoMapMax[i], 4.0f, 20.0f);
+        float imA = mapf(eng, aoMapMin[i], aoMapMax[i], 4.0f, 20.0f);
         float vout = (imA / 1000.0f) * SHUNT_OHMS;
 
         int maxDuty = (1 << PWM_RES) - 1;
-        int duty    = (int)((vout / VREF) * maxDuty);
+        int duty = (int)((vout / VREF) * maxDuty);
 
-        if (duty < 0)       duty = 0;
-        if (duty > maxDuty) duty = maxDuty;
+        if (duty < 0)
+            duty = 0;
+        if (duty > maxDuty)
+            duty = maxDuty;
 
         ledcWrite(PWM_CH[i], duty);
     }
 #endif
+
+    static uint32_t lastDebugPrintMs = 0;
+    uint32_t now = millis();
+    if (now - lastDebugPrintMs >= 1000)
+    {
+        lastDebugPrintMs = now;
+        Serial.print("[HAL] AI: [");
+
+        for (int i = 0; i < AI_COUNT; i++)
+        {
+            Serial.print(ai[i]);
+            if (i < AI_COUNT - 1)
+                Serial.print(", ");
+        }
+        Serial.print("] AO: [");
+
+        for (int i = 0; i < AO_COUNT; i++)
+        {
+            Serial.print(ao[i]);
+            if (i < AO_COUNT - 1)
+                Serial.print(", ");
+        }
+        Serial.print("] DI: [");
+
+        for (int i = 0; i < DI_COUNT; i++)
+        {
+            Serial.print(di[i]);
+            if (i < DI_COUNT - 1)
+                Serial.print(", ");
+        }
+        Serial.print("] DO: [");
+        
+        for (int i = 0; i < DO_COUNT; i++)
+        {
+            Serial.print(doo[i]);
+            if (i < DO_COUNT - 1)
+                Serial.print(", ");
+        }
+        Serial.println("]");
+    }
 }

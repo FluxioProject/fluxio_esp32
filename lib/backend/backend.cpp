@@ -450,6 +450,9 @@ bool fetchLogicFromBackend(String &outJson, String &outUpdatedAt)
         String body = http.getString();
         http.end();
 
+        Serial.printf("[Backend] logic-for-device body len=%d, freeHeap=%u\n",
+                      body.length(), ESP.getFreeHeap());
+
         JsonDocument doc;
         DeserializationError err = deserializeJson(doc, body);
         if (err)
@@ -462,12 +465,25 @@ bool fetchLogicFromBackend(String &outJson, String &outUpdatedAt)
 
           JsonDocument logicDoc;
           logicDoc["v"] = doc["v"];
-          logicDoc["blocks"] = doc["blocks"];
+          logicDoc["blocks"] = doc["blocks"]; 
 
           String out;
           serializeJson(logicDoc, out);
-          outJson = out;
-          ok = true;
+
+          Serial.printf("[Backend] rebuilt logic JSON len=%d, freeHeap after=%u\n",
+                        out.length(), ESP.getFreeHeap());
+          Serial.printf("[Backend] maxAllocHeap=%u\n", ESP.getMaxAllocHeap());
+
+          if (out.length() > 0)
+
+          {
+            outJson = out;
+            ok = true;
+          }
+          else
+          {
+            Serial.println("[Backend] Falha ao reconstruir JSON da lógica (out vazio)");
+          }
         }
       }
     }

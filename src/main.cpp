@@ -121,7 +121,7 @@ void initTasks()
   xTaskCreatePinnedToCore(taskTelemetry, "Telemetry", 4096, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(taskAlerts, "Alerts", 8192, NULL, 1, NULL, 0);
 
-  xTaskCreatePinnedToCore(wifiandwdtTask, "Wifi_And_WDT", 4096, NULL, 2, NULL,
+  xTaskCreatePinnedToCore(wifiandwdtTask, "Wifi_And_WDT", 4096, NULL, 4, NULL,
                           0);
 
   xTaskCreatePinnedToCore(taskLogic, "Logic", 12288, NULL, 2, NULL, 1);

@@ -10,7 +10,7 @@
 WiFiClientSecure wifiClient;
 PubSubClient mqtt(wifiClient);
 
-static const uint16_t MQTT_BUFFER_SIZE = 1024;
+static const uint16_t MQTT_BUFFER_SIZE = 2048;
 static uint32_t mqttReconnectAttempts = 0;
 static uint32_t lastConnectAttemptMs = 0;
 static uint32_t lastStatusPublishMs = 0;
