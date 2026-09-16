@@ -77,6 +77,9 @@ void HAL::updateIO()
 
         float eng = mapf(vsensor, 0.0f, AI_INPUT_MAX_VOLTS, aiMapMin[i], aiMapMax[i]);
 
+        aiRawAdc[i] = raw;
+        aiRawVolts[i] = vsensor;
+
         // Safety clamp
         if (eng < aiMapMin[i])
             eng = aiMapMin[i];
@@ -172,6 +175,20 @@ void HAL::updateIO()
         {
             Serial.print(doo[i]);
             if (i < DO_COUNT - 1)
+                Serial.print(", ");
+        }
+        Serial.print("[HAL] AI raw (adc): [");
+        for (int i = 0; i < AI_COUNT; i++)
+        {
+            Serial.print(aiRawAdc[i]);
+            if (i < AI_COUNT - 1)
+                Serial.print(", ");
+        }
+        Serial.print("] AI raw (V sensor): [");
+        for (int i = 0; i < AI_COUNT; i++)
+        {
+            Serial.print(aiRawVolts[i], 3);
+            if (i < AI_COUNT - 1)
                 Serial.print(", ");
         }
         Serial.println("]");

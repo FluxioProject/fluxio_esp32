@@ -19,8 +19,11 @@ public:
     int di[DI_COUNT] = {0};   ///< Digital inputs (0 or 1).
     int doo[DO_COUNT] = {0};  ///< Digital outputs (0 or 1).
 
+    float aiRawAdc[AI_COUNT];   // contagem crua do ADC (0-4095, já com oversample)
+    float aiRawVolts[AI_COUNT]; // tensão do sensor já desfazendo o divisor, ANTES do deadband
+
 #ifndef IO_SIMULATION
-    // ----- Mapping ranges — populated by backend.cpp after fetchAllChannels() -----
+                                // ----- Mapping ranges — populated by backend.cpp after fetchAllChannels() -----
     float aiMapMin[AI_COUNT] = {0};   ///< Engineering minimum for each AI channel.
     float aiMapMax[AI_COUNT] = {100}; ///< Engineering maximum for each AI channel.
     float aoMapMin[AO_COUNT] = {0};   ///< Engineering minimum for each AO channel.
