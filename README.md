@@ -8,7 +8,7 @@ ESP32 firmware for a multi-channel industrial I/O device with MQTT connectivity,
 - 4 analog output slots driven by PWM and external 4-20 mA conditioning circuitry
 - 4 digital inputs with edge-triggered alerts
 - 4 digital outputs controlled through MQTT
-- JSON-based logic engine with math, compare, timer, and I/O blocks
+- JSON-based logic engine with math, compare, timer, I/O, PID, and time-proportioning (TPO) blocks
 - MQTT/HTTPS transport support with certificate placeholders in `credentials.h`
 - OTA updates with SHA-256 integrity checks
 - Local web portal for Wi-Fi configuration and firmware upload
@@ -120,10 +120,12 @@ Commands are published to `device/<DEVICE_ID>/control`.
 Logic programs are JSON objects with a `blocks` array. Each block includes:
 
 - `id` - unique block identifier
-- `t` - block type: `0` math, `1` compare, `2` timer, `3` I/O
-- `op` - operation code for the selected block type
+- `t` - block type: `0` math, `1` compare, `2` timer, `3` I/O, `4` PID, `5` TPO (time-proportioning output)
+- `op` - operation code for the selected block type (math/compare only)
 - `io` - I/O selector for I/O blocks
 - `in` - input references or constants
+- `pid` - tuning config for PID blocks: `{ "kp", "ki", "kd", "outMin", "outMax" }`
+- `tpo` - cycle config for TPO blocks: `{ "period": <ms> }`
 
 Example: if AI0 is greater than 75.0, set DO0 to 1.
 
@@ -140,6 +142,29 @@ Example: if AI0 is greater than 75.0, set DO0 to 1.
   ]
 }
 ```
+
+Example: temperature control loop driving an SSR-based heater through a PID + time-proportioning output. AI0 is the temperature sensor, DO0 is the heater's SSR.
+
+```jsonc
+{
+  "type": "logic",
+  "blocks": [
+    { "id": 0, "t": 3, "io": [0, 0] },
+    {
+      "id": 1,
+      "t": 4,
+      "in": [[0, 1], [1, 0], [0, 60.0]],
+      "pid": { "kp": 2.0, "ki": 0.1, "kd": 0.0, "outMin": 0, "outMax": 100 }
+    },
+    { "id": 2, "t": 5, "in": [[1, 1]], "tpo": { "period": 8000 } },
+    { "id": 3, "t": 3, "io": [3, 0], "in": [[1, 2]] }
+  ]
+}
+```
+
+Here block 1 (PID) is always enabled (`[0, 1]`), reads AI0 as PV (`[1, 0]`), targets a 60.0 setpoint (`[0, 60.0]`), and its 0-100 output feeds block 2 (TPO), which converts it into an on/off signal over an 8-second cycle that drives DO0.
+
+`BLOCK_TPO`'s output is always 0 or 1 — wire it into an `IO_DO` block, never an `IO_AO` (a proportional value read on/off would show as 0%/100%, not the intended duty).
 
 ## Serial Debug Console
 

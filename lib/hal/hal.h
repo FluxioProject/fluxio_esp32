@@ -19,8 +19,17 @@ public:
     int di[DI_COUNT] = {0};   ///< Digital inputs (0 or 1).
     int doo[DO_COUNT] = {0};  ///< Digital outputs (0 or 1).
 
-    float aiRawAdc[AI_COUNT];   // contagem crua do ADC (0-4095, já com oversample)
-    float aiRawVolts[AI_COUNT]; // tensão do sensor já desfazendo o divisor, ANTES do deadband
+    /// Diagnostic-only snapshots of the AI pipeline, captured BEFORE the
+    /// deadband filter is applied. ai[] (above) always mirrors what's
+    /// been sent to the backend/MQTT; these two arrays exist purely so
+    /// the periodic debug log can show what the ADC is really doing
+    /// underneath the filtered value — useful for calibrating
+    /// AI_DIVIDER_RATIO, AI_OVERSAMPLE, or aiDeadband[]. Not used by any
+    /// control logic. Zero-initialized so IO_SIMULATION builds (which
+    /// never populate them) still print a defined value instead of
+    /// uninitialized memory.
+    float aiRawAdc[AI_COUNT] = {0};   ///< Raw averaged ADC count (0-4095) per channel.
+    float aiRawVolts[AI_COUNT] = {0}; ///< Recovered sensor voltage (0-10V) per channel, pre-deadband.
 
 #ifndef IO_SIMULATION
                                 // ----- Mapping ranges — populated by backend.cpp after fetchAllChannels() -----

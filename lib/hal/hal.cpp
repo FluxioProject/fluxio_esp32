@@ -77,6 +77,9 @@ void HAL::updateIO()
 
         float eng = mapf(vsensor, 0.0f, AI_INPUT_MAX_VOLTS, aiMapMin[i], aiMapMax[i]);
 
+        // Diagnostic snapshot, BEFORE the safety clamp and deadband below
+        // — see the field comments in hal.h for why this is kept separate
+        // from ai[i].
         aiRawAdc[i] = raw;
         aiRawVolts[i] = vsensor;
 
@@ -177,6 +180,8 @@ void HAL::updateIO()
             if (i < DO_COUNT - 1)
                 Serial.print(", ");
         }
+        Serial.println("]");
+
         Serial.print("[HAL] AI raw (adc): [");
         for (int i = 0; i < AI_COUNT; i++)
         {

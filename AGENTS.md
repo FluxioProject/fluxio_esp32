@@ -34,13 +34,13 @@ include/
   credentials.example.h
 lib/
   app_state/          — runtime globals: WiFi, MQTT state, topics, manualMode
-  hal/                — HAL class: io arrays (ai/ao/di/doo), init(), updateIO()
+  hal/                — HAL class: io arrays (ai/ao/di/doo), diagnostic-only aiRawAdc/aiRawVolts, init(), updateIO()
   eeprom/             — EEPROMManager: read/write Wi-Fi creds + logic program
   webserver/          — MyWebServer: config portal + Wi-Fi connect + wifiandwdtTask
   mqtt/               — MQTT client, callbacks, telemetry, initMQTT()
   backend/            — HTTP calls: fetchMQTTCredentials, fetchAllChannels, setInitChannels
   alerts/             — Channel limit monitoring, DI/DO edge alerts, alertQueue, NVS offline persistence
-  logic/              — Block-based logic engine (MATH/COMPARE/TIMER/IO blocks), NVS persistence
+  logic/              — Block-based logic engine (MATH/COMPARE/TIMER/IO/PID/TPO blocks), NVS persistence
   ota/                — OTA via HTTPS with SHA-256 verification
   serial_test/        — Interactive debug console + unit test framework (real IO only)
 ```
@@ -49,9 +49,11 @@ lib/
 
 - **All IO accessed through `hal` global** — `hal.ai[i]`, `hal.ao[i]`, `hal.di[i]`, `hal.doo[i]`
 - **Mapping ranges** live on `hal.aiMapMin/Max[]`, `hal.aoMapMin/Max[]` — set by `fetchAllChannels()`
+- **`hal.aiRawAdc[]` / `hal.aiRawVolts[]`** are diagnostic-only snapshots of the AI pipeline captured before the deadband filter — logged every 1s alongside the filtered `hal.ai[]`, never read by control logic
 - **Alert metadata** (name, notify flags, trigger edge, lastState) lives in `lib/alerts/`
 - **Alert NVS persistence** — failed HTTP POSTs are saved to NVS namespace `"alerts"` (up to 8 slots, FIFO eviction) and replayed every 30 s by `taskAlerts`
 - **`IOType` enum** (`IO_AI/IO_DI/IO_AO/IO_DO`) lives in `logic.h` — use it instead of magic numbers 0–3 in `executeLogic()`
+- **`BlockType` enum** (`BLOCK_MATH/BLOCK_COMPARE/BLOCK_TIMER/BLOCK_IO/BLOCK_PID/BLOCK_TPO`) also lives in `logic.h` — `BLOCK_TPO`'s output (0/1) must only feed an `IO_DO` block, never `IO_AO`
 - **`#pragma once`** used in all headers — never `#ifndef` guards
 - **C-style char arrays** for MQTT/EEPROM buffers; `String` only for Arduino API calls
 - **FreeRTOS tasks** pinned to cores: MQTT + Telemetry + Logic → core 1; OTA + WDT + Alerts → core 0
@@ -111,5 +113,6 @@ Verify expiry: `echo | openssl s_client -connect <host>:<port> 2>/dev/null | ope
 
 - `alertQueue` must be created **before** `xTaskCreatePinnedToCore(taskAlerts, ...)` in `initTasks()`
 - `esp_task_wdt_add(NULL)` must be the first call in `wifiandwdtTask` — the watchdog only monitors tasks that subscribe to it
-- Logic block IDs from JSON must be `< MAX_BLOCKS (32)` — validated in `loadLogicFromJson()`
+- Logic block **ids** from JSON must be `< MAX_BLOCK_ID` (256) — validated in `loadLogicFromJson()`; the number of blocks that actually fit in memory at once is a separate, smaller limit, `MAX_BLOCKS` (64)
+- `BLOCK_PID` and `BLOCK_TPO` both run their stateful update only on `pass == 0` inside `executeLogic()`'s 3-pass loop — moving that logic to run on every pass would triple-accumulate the PID integral and restart the TPO cycle timer 3x too often
 - `serverStartTime` is set inside `setupRoutes()` (when the server actually starts), not in `setup()`

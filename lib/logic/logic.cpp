@@ -116,6 +116,19 @@ bool loadLogicFromJson(JsonDocument &doc)
       lb.pidOutMax = pidCfg["outMax"] | 100.0f;
     }
 
+    // TPO fields: same always-reset-on-load rationale as PID above — a
+    // stale tpoPeriodMs/tpoCycleStartMs left in this slot from a
+    // previous program would silently misbehave if it becomes a TPO
+    // block later without an explicit "tpo" object in the JSON.
+    lb.tpoPeriodMs = 10000.0f;
+    lb.tpoCycleStartMs = 0;
+
+    if (lb.type == BLOCK_TPO && b["tpo"].is<JsonObject>())
+    {
+      JsonObject tpoCfg = b["tpo"];
+      lb.tpoPeriodMs = tpoCfg["period"] | 10000.0f;
+    }
+
     // IO
     lb.ioType = 255; // invalid by default
     lb.ioChannel = 0;
@@ -165,6 +178,11 @@ bool loadLogicFromJson(JsonDocument &doc)
     {
       Serial.printf("  pid kp=%.4f ki=%.4f kd=%.4f outMin=%.2f outMax=%.2f\n",
                     lb.pidKp, lb.pidKi, lb.pidKd, lb.pidOutMin, lb.pidOutMax);
+    }
+
+    if (lb.type == BLOCK_TPO)
+    {
+      Serial.printf("  tpo period=%.0fms\n", lb.tpoPeriodMs);
     }
 
     for (int j = 0; j < lb.inputCount; j++)
@@ -297,7 +315,7 @@ void executeLogic()
 
         if (b.op == 0) // >
           b.lastValue = (a > c) ? 1.0f : 0.0f;
-        else if (b.op == 1) // <
+        else if (b.op == 1) // 
           b.lastValue = (a < c) ? 1.0f : 0.0f;
         else if (b.op == 2) // ==
           b.lastValue = (a == c) ? 1.0f : 0.0f;
@@ -471,6 +489,37 @@ void executeLogic()
           // else: leave b.pidIntegral unchanged (frozen this cycle).
 
           b.lastValue = output;
+        }
+        break;
+      }
+      case BLOCK_TPO:
+      {
+        // Same pass==0 gating rationale as BLOCK_PID above: the cycle
+        // timer is stateful, so it must only advance/restart once per
+        // executeLogic() call, not once per one of the 3 settle passes.
+        if (pass == 0)
+        {
+          float duty = getInputValue(b.inputs[0]);
+          if (duty < 0.0f)
+            duty = 0.0f;
+          if (duty > 100.0f)
+            duty = 100.0f;
+
+          uint32_t now = millis();
+
+          if (b.tpoCycleStartMs == 0)
+            b.tpoCycleStartMs = now; // first run after load
+
+          uint32_t elapsed = now - b.tpoCycleStartMs;
+
+          if (elapsed >= (uint32_t)b.tpoPeriodMs)
+          {
+            b.tpoCycleStartMs = now; // start a new cycle
+            elapsed = 0;
+          }
+
+          uint32_t onTime = (uint32_t)(b.tpoPeriodMs * (duty / 100.0f));
+          b.lastValue = (elapsed < onTime) ? 1.0f : 0.0f;
         }
         break;
       }

@@ -42,7 +42,25 @@ enum BlockType
    * parameters read once from the block's "pid" JSON object (see
    * loadLogicFromJson()) and stored in the pid* fields below.
    */
-  BLOCK_PID = 4
+  BLOCK_PID = 4,
+  /**
+   * Time-proportioning output (TPO). Converts a continuous 0-100 duty
+   * cycle — typically fed straight from a BLOCK_PID's output — into a
+   * discrete on/off signal for actuators that can only switch, such as
+   * an SSR driving a resistive heater.
+   *
+   * Inputs:
+   *   inputs[0] = duty cycle, 0-100 (%)
+   *
+   * The cycle period is NOT an input; it's a static config value read
+   * once from the block's "tpo" JSON object (see loadLogicFromJson())
+   * and stored in tpoPeriodMs below.
+   *
+   * Feed this block's output (always 0.0 or 1.0) into a BLOCK_IO of
+   * type IO_DO. Never wire it into an IO_AO — a 0/1 signal on an AO
+   * would be read as 0%/100%, not as a real proportional value.
+   */
+  BLOCK_TPO = 5
 };
 
 /** @brief Determines where a block gets its input value from. */
@@ -110,6 +128,14 @@ struct LogicBlock
   float pidIntegral;   ///< Accumulated integral term (engineering units of output).
   float pidPrevError;  ///< Error computed on the previous cycle, for the derivative term.
   uint32_t pidLastRunMs; ///< millis() at the last state update. 0 = never run yet.
+
+  // ---------------------------------------------------------------------
+  // BLOCK_TPO-only fields. Same rationale as the PID fields above:
+  // present on every LogicBlock, ignored for every type other than
+  // BLOCK_TPO.
+  // ---------------------------------------------------------------------
+  float tpoPeriodMs;        ///< Cycle length in ms. Default 10000 (10s) if "tpo.period" isn't set.
+  uint32_t tpoCycleStartMs; ///< millis() when the current on/off cycle started. 0 = never run yet.
 };
 
 /** Maps block ID → index in logicBlocks[]. -1 if the ID is not present. */
