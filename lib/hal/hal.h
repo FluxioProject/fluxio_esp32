@@ -41,8 +41,9 @@ public:
     /// Deadband per AI channel, in engineering units. A new reading only
     /// replaces ai[i] once it differs from the last published value by
     /// at least this amount. Set to 0 to disable for a given channel.
-    /// Default value can be overridden per channel by backend.cpp.
-    float aiDeadband[AI_COUNT] = {0.5f, 0.5f, 0.5f, 0.5f};
+    /// Default value can be adjusted per channel here.
+    // Conservative noise filter for engineering-unit inputs (e.g. 0.1 °C).
+    float aiDeadband[AI_COUNT] = {0.1f, 0.1f, 0.1f, 0.1f};
 #endif
 
     /**

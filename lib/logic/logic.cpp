@@ -87,6 +87,9 @@ bool loadLogicFromJson(JsonDocument &doc)
 
     lb.type = b["t"];
     lb.op = b["op"] | 0;
+    lb.compareHysteresis = b["hyst"] | 0.5f;
+    if (lb.compareHysteresis < 0.0f)
+      lb.compareHysteresis = 0.0f;
     lb.lastValue = 0;
     lb.timerStartMs = 0;
     lb.timerRunning = false;
@@ -313,16 +316,20 @@ void executeLogic()
         float a = getInputValue(b.inputs[0]);
         float c = getInputValue(b.inputs[1]);
 
+        // Stateful hysteresis prevents an output from chattering when the
+        // input hovers around a threshold. The optional JSON "hyst" value
+        // sets the band in engineering units; legacy programs default to 0.5.
+        bool wasTrue = b.lastValue > 0.5f;
         if (b.op == 0) // >
-          b.lastValue = (a > c) ? 1.0f : 0.0f;
-        else if (b.op == 1) // 
-          b.lastValue = (a < c) ? 1.0f : 0.0f;
+          b.lastValue = (wasTrue ? (a > c - b.compareHysteresis) : (a > c)) ? 1.0f : 0.0f;
+        else if (b.op == 1) // <
+          b.lastValue = (wasTrue ? (a < c + b.compareHysteresis) : (a < c)) ? 1.0f : 0.0f;
         else if (b.op == 2) // ==
           b.lastValue = (a == c) ? 1.0f : 0.0f;
         else if (b.op == 3) // >=
-          b.lastValue = (a >= c) ? 1.0f : 0.0f;
+          b.lastValue = (wasTrue ? (a > c - b.compareHysteresis) : (a >= c)) ? 1.0f : 0.0f;
         else if (b.op == 4) // <=
-          b.lastValue = (a <= c) ? 1.0f : 0.0f;
+          b.lastValue = (wasTrue ? (a < c + b.compareHysteresis) : (a <= c)) ? 1.0f : 0.0f;
 
         break;
       }

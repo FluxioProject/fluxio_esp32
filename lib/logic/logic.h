@@ -102,6 +102,7 @@ struct LogicBlock
   uint8_t id;
   uint8_t type; ///< BlockType value.
   uint8_t op;   ///< Operation code (meaning depends on type).
+  float compareHysteresis; ///< BLOCK_COMPARE switching band in engineering units.
 
   uint8_t ioType;    ///< IOType value: IO_AI, IO_DI, IO_AO, or IO_DO (BLOCK_IO only). 255 = invalid.
   uint8_t ioChannel; ///< Zero-based physical channel index (BLOCK_IO only).

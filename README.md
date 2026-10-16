@@ -122,6 +122,7 @@ Logic programs are JSON objects with a `blocks` array. Each block includes:
 - `id` - unique block identifier
 - `t` - block type: `0` math, `1` compare, `2` timer, `3` I/O, `4` PID, `5` TPO (time-proportioning output)
 - `op` - operation code for the selected block type (math/compare only)
+- `hyst` - optional hysteresis width for compare blocks, in the input's engineering units; defaults to `0.5` (`>` turns on above the threshold and stays on until it falls below threshold minus `hyst`; `<` works in the opposite direction)
 - `io` - I/O selector for I/O blocks
 - `in` - input references or constants
 - `pid` - tuning config for PID blocks: `{ "kp", "ki", "kd", "outMin", "outMax" }`
@@ -137,7 +138,7 @@ Example: if AI0 is greater than 75.0, set DO0 to 1.
   // Ordered list of blocks that form the program.
   "blocks": [
     { "id": 10, "t": 3, "op": 0, "io": [0, 0] },
-    { "id": 0, "t": 1, "op": 1, "in": [[1, 10], [0, 75.0]] },
+    { "id": 0, "t": 1, "op": 1, "hyst": 0.5, "in": [[1, 10], [0, 75.0]] },
     { "id": 1, "t": 3, "op": 1, "io": [3, 0], "in": [[1, 0]] }
   ]
 }
