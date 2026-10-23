@@ -340,7 +340,18 @@ void taskMQTT(void *pvParameters)
 
 void sendTelemetry()
 {
+  // Monotonic sequence number so the dashboard can detect dropped
+  // messages in exported traces.
+  static uint32_t telemetrySeq = 0;
+
   JsonDocument doc;
+
+  // Device-side timestamp: arrival time at the browser carries network
+  // jitter, which skews step-response identification. Only differences
+  // between samples matter, so millis() is enough (wraps every ~49 days;
+  // the dashboard handles the uint32 wrap).
+  doc["ms"] = millis();
+  doc["seq"] = telemetrySeq++;
 
   JsonArray jai = doc["ai"].to<JsonArray>();
   JsonArray jao = doc["ao"].to<JsonArray>();
@@ -356,7 +367,7 @@ void sendTelemetry()
   for (int i = 0; i < DO_COUNT; i++)
     jdo.add(hal.doo[i]);
 
-  char payload[256];
+  char payload[320];
   size_t len = serializeJson(doc, payload, sizeof(payload));
 
   if (len == 0 || len >= sizeof(payload))
